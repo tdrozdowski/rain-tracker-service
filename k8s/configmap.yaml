@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rain-tracker-config
+  namespace: default
+data:
+  SERVER_HOST: "0.0.0.0"
+  SERVER_PORT: "8080"
+  GAUGE_URL: "https://alert.fcd.maricopa.gov/php/showdata4.php?ID=59700&NM=1000"
+  FETCH_INTERVAL_MINUTES: "15"
+  RUST_LOG: "info"

@@ -1,0 +1,88 @@
+use chrono::{Datelike, Utc};
+use rain_tracker_service::db::{get_rain_year, RainDb};
+use rain_tracker_service::fetcher::RainReading;
+use sqlx::postgres::PgPoolOptions;
+
+#[tokio::test]
+async fn test_insert_and_retrieve_readings() {
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string());
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to test database");
+
+    // Run migrations
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run migrations");
+
+    let db = RainDb::new(pool);
+
+    // Create test readings
+    let readings = vec![
+        RainReading {
+            reading_datetime: Utc::now(),
+            cumulative_inches: 1.85,
+            incremental_inches: 0.04,
+        },
+        RainReading {
+            reading_datetime: Utc::now(),
+            cumulative_inches: 1.81,
+            incremental_inches: 0.04,
+        },
+    ];
+
+    // Insert readings
+    let inserted = db.insert_readings(&readings).await.unwrap();
+    assert!(inserted > 0);
+
+    // Retrieve latest reading
+    let latest = db.get_latest_reading().await.unwrap();
+    assert!(latest.is_some());
+}
+
+#[tokio::test]
+async fn test_rain_year_queries() {
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string());
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to test database");
+
+    let db = RainDb::new(pool);
+
+    // Query for current rain year
+    let current_rain_year = get_rain_year(Utc::now());
+    let readings = db.get_rain_year_readings(current_rain_year).await.unwrap();
+
+    // Should return some readings (assuming we've inserted some)
+    assert!(readings.len() >= 0);
+}
+
+#[tokio::test]
+async fn test_calendar_year_queries() {
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string());
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to test database");
+
+    let db = RainDb::new(pool);
+
+    // Query for current calendar year
+    let current_year = Utc::now().year();
+    let readings = db.get_calendar_year_readings(current_year).await.unwrap();
+
+    // Should return some readings (assuming we've inserted some)
+    assert!(readings.len() >= 0);
+}

@@ -1,0 +1,169 @@
+### Health Check
+GET {{baseUrl}}/health
+
+> {%
+    client.test("Health check returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Health check has status field", function() {
+        client.assert(response.body.hasOwnProperty("status"), "Response doesn't have status field");
+        client.assert(response.body.status === "healthy", "Status is not healthy");
+    });
+
+    client.test("Health check has latest_reading field", function() {
+        client.assert(response.body.hasOwnProperty("latest_reading"), "Response doesn't have latest_reading field");
+    });
+%}
+
+###
+
+### Get Latest Reading
+GET {{baseUrl}}/readings/latest
+
+> {%
+    client.test("Latest reading returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Response status is not 200 or 404");
+    });
+
+    client.test("Latest reading has correct structure (if found)", function() {
+        if (response.status === 200) {
+            client.assert(response.body.hasOwnProperty("id"), "Response doesn't have id field");
+            client.assert(response.body.hasOwnProperty("reading_datetime"), "Response doesn't have reading_datetime field");
+            client.assert(response.body.hasOwnProperty("cumulative_inches"), "Response doesn't have cumulative_inches field");
+            client.assert(response.body.hasOwnProperty("incremental_inches"), "Response doesn't have incremental_inches field");
+            client.assert(response.body.hasOwnProperty("station_id"), "Response doesn't have station_id field");
+            client.assert(response.body.hasOwnProperty("created_at"), "Response doesn't have created_at field");
+        }
+    });
+%}
+
+###
+
+### Get Rain Year Readings - Current Year (2025)
+GET {{baseUrl}}/readings/rain-year/2025
+
+> {%
+    client.test("Rain year returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Rain year has correct structure", function() {
+        client.assert(response.body.hasOwnProperty("rain_year"), "Response doesn't have rain_year field");
+        client.assert(response.body.rain_year === 2025, "Rain year is not 2025");
+        client.assert(response.body.hasOwnProperty("total_readings"), "Response doesn't have total_readings field");
+        client.assert(response.body.hasOwnProperty("total_rainfall_inches"), "Response doesn't have total_rainfall_inches field");
+        client.assert(response.body.hasOwnProperty("readings"), "Response doesn't have readings field");
+        client.assert(Array.isArray(response.body.readings), "Readings is not an array");
+    });
+
+    client.test("Rain year readings have correct structure", function() {
+        if (response.body.readings.length > 0) {
+            const reading = response.body.readings[0];
+            client.assert(reading.hasOwnProperty("id"), "Reading doesn't have id field");
+            client.assert(reading.hasOwnProperty("reading_datetime"), "Reading doesn't have reading_datetime field");
+            client.assert(reading.hasOwnProperty("cumulative_inches"), "Reading doesn't have cumulative_inches field");
+            client.assert(reading.hasOwnProperty("incremental_inches"), "Reading doesn't have incremental_inches field");
+            client.assert(reading.hasOwnProperty("station_id"), "Reading doesn't have station_id field");
+        }
+    });
+%}
+
+###
+
+### Get Rain Year Readings - 2024
+GET {{baseUrl}}/readings/rain-year/2024
+
+> {%
+    client.test("Rain year 2024 returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Rain year 2024 has correct year", function() {
+        client.assert(response.body.rain_year === 2024, "Rain year is not 2024");
+    });
+%}
+
+###
+
+### Get Calendar Year Readings - Current Year (2025)
+GET {{baseUrl}}/readings/calendar-year/2025
+
+> {%
+    client.test("Calendar year returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Calendar year has correct structure", function() {
+        client.assert(response.body.hasOwnProperty("calendar_year"), "Response doesn't have calendar_year field");
+        client.assert(response.body.calendar_year === 2025, "Calendar year is not 2025");
+        client.assert(response.body.hasOwnProperty("total_readings"), "Response doesn't have total_readings field");
+        client.assert(response.body.hasOwnProperty("total_rainfall_inches"), "Response doesn't have total_rainfall_inches field");
+        client.assert(response.body.hasOwnProperty("readings"), "Response doesn't have readings field");
+        client.assert(Array.isArray(response.body.readings), "Readings is not an array");
+    });
+
+    client.test("Calendar year readings have correct structure", function() {
+        if (response.body.readings.length > 0) {
+            const reading = response.body.readings[0];
+            client.assert(reading.hasOwnProperty("id"), "Reading doesn't have id field");
+            client.assert(reading.hasOwnProperty("reading_datetime"), "Reading doesn't have reading_datetime field");
+            client.assert(reading.hasOwnProperty("cumulative_inches"), "Reading doesn't have cumulative_inches field");
+            client.assert(reading.hasOwnProperty("incremental_inches"), "Reading doesn't have incremental_inches field");
+            client.assert(reading.hasOwnProperty("station_id"), "Reading doesn't have station_id field");
+        }
+    });
+%}
+
+###
+
+### Get Calendar Year Readings - 2024
+GET {{baseUrl}}/readings/calendar-year/2024
+
+> {%
+    client.test("Calendar year 2024 returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Calendar year 2024 has correct year", function() {
+        client.assert(response.body.calendar_year === 2024, "Calendar year is not 2024");
+    });
+%}
+
+###
+
+### Invalid Rain Year (should still return 200 with empty data)
+GET {{baseUrl}}/readings/rain-year/1900
+
+> {%
+    client.test("Old rain year returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Old rain year has empty readings", function() {
+        client.assert(response.body.total_readings === 0, "Total readings is not 0");
+        client.assert(response.body.readings.length === 0, "Readings array is not empty");
+    });
+%}
+
+###
+
+### Invalid Calendar Year (should still return 200 with empty data)
+GET {{baseUrl}}/readings/calendar-year/1900
+
+> {%
+    client.test("Old calendar year returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Old calendar year has empty readings", function() {
+        client.assert(response.body.total_readings === 0, "Total readings is not 0");
+        client.assert(response.body.readings.length === 0, "Readings array is not empty");
+    });
+%}
+
+###
+
+GET https://alert.fcd.maricopa.gov/php/showdata4.php?ID=59700&NM=1000
+
+###

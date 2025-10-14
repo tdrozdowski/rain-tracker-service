@@ -1,0 +1,31 @@
+[package]
+name = "rain-tracker-service"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rain_tracker_service"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rain-tracker-service"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1.48", features = ["full"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "chrono"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = "0.11"
+scraper = "0.19"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace"] }
+dotenvy = "0.15"
+thiserror = "1"
+
+[dev-dependencies]
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "chrono"] }
