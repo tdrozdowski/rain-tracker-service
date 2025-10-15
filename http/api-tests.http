@@ -1,5 +1,5 @@
 ### Health Check
-GET {{baseUrl}}/health
+GET {{baseUrl}}/api/v1/health
 
 > {%
     client.test("Health check returns 200", function() {
@@ -19,7 +19,7 @@ GET {{baseUrl}}/health
 ###
 
 ### Get Latest Reading
-GET {{baseUrl}}/readings/latest
+GET {{baseUrl}}/api/v1/readings/latest
 
 > {%
     client.test("Latest reading returns 200 or 404", function() {
@@ -41,7 +41,7 @@ GET {{baseUrl}}/readings/latest
 ###
 
 ### Get Rain Year Readings - Current Year (2025)
-GET {{baseUrl}}/readings/water-year/2025
+GET {{baseUrl}}/api/v1/readings/water-year/2025
 
 > {%
     client.test("Water year returns 200", function() {
@@ -72,7 +72,7 @@ GET {{baseUrl}}/readings/water-year/2025
 ###
 
 ### Get Rain Year Readings - 2024
-GET {{baseUrl}}/readings/water-year/2024
+GET {{baseUrl}}/api/v1/readings/water-year/2024
 
 > {%
     client.test("Water year 2024 returns 200", function() {
@@ -87,7 +87,7 @@ GET {{baseUrl}}/readings/water-year/2024
 ###
 
 ### Get Calendar Year Readings - Current Year (2025)
-GET {{baseUrl}}/readings/calendar-year/2025
+GET {{baseUrl}}/api/v1/readings/calendar-year/2025
 
 > {%
     client.test("Calendar year returns 200", function() {
@@ -118,7 +118,7 @@ GET {{baseUrl}}/readings/calendar-year/2025
 ###
 
 ### Get Calendar Year Readings - 2024
-GET {{baseUrl}}/readings/calendar-year/2024
+GET {{baseUrl}}/api/v1/readings/calendar-year/2024
 
 > {%
     client.test("Calendar year 2024 returns 200", function() {
@@ -133,7 +133,7 @@ GET {{baseUrl}}/readings/calendar-year/2024
 ###
 
 ### Invalid Rain Year (should still return 200 with empty data)
-GET {{baseUrl}}/readings/water-year/1900
+GET {{baseUrl}}/api/v1/readings/water-year/1900
 
 > {%
     client.test("Old rain year returns 200", function() {
@@ -149,7 +149,7 @@ GET {{baseUrl}}/readings/water-year/1900
 ###
 
 ### Invalid Calendar Year (should still return 200 with empty data)
-GET {{baseUrl}}/readings/calendar-year/1900
+GET {{baseUrl}}/api/v1/readings/calendar-year/1900
 
 > {%
     client.test("Old calendar year returns 200", function() {

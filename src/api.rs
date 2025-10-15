@@ -49,12 +49,14 @@ pub struct HealthResponse {
 }
 
 pub fn create_router(state: AppState) -> Router {
-    Router::new()
+    let api_routes = Router::new()
         .route("/health", get(health))
         .route("/readings/water-year/{year}", get(get_water_year))
         .route("/readings/calendar-year/{year}", get(get_calendar_year))
         .route("/readings/latest", get(get_latest))
-        .with_state(state)
+        .with_state(state);
+
+    Router::new().nest("/api/v1", api_routes)
 }
 
 #[instrument(skip(state))]

@@ -27,13 +27,13 @@ spec:
             name: rain-tracker-secret
         livenessProbe:
           httpGet:
-            path: /health
+            path: /api/v1/health
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /health
+            path: /api/v1/health
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 5

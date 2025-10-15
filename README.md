@@ -12,31 +12,33 @@ A Rust-based service that tracks rain gauge readings from the Maricopa County Fl
 
 ## API Endpoints
 
+All endpoints are prefixed with `/api/v1`.
+
 ### Health Check
 ```
-GET /health
+GET /api/v1/health
 ```
 Returns service health status and latest reading.
 
 ### Get Rain Year Readings
 ```
-GET /readings/water-year/{year}
+GET /api/v1/readings/water-year/{year}
 ```
 Returns all readings for a rain year (Oct 1 of year-1 through Sep 30 of year).
 
-Example: `GET /readings/water-year/2025` returns readings from Oct 1, 2024 to Sep 30, 2025.
+Example: `GET /api/v1/readings/water-year/2025` returns readings from Oct 1, 2024 to Sep 30, 2025.
 
 ### Get Calendar Year Readings
 ```
-GET /readings/calendar-year/{year}
+GET /api/v1/readings/calendar-year/{year}
 ```
 Returns all readings for a calendar year (Jan 1 through Dec 31).
 
-Example: `GET /readings/calendar-year/2025` returns readings from Jan 1, 2025 to Dec 31, 2025.
+Example: `GET /api/v1/readings/calendar-year/2025` returns readings from Jan 1, 2025 to Dec 31, 2025.
 
 ### Get Latest Reading
 ```
-GET /readings/latest
+GET /api/v1/readings/latest
 ```
 Returns the most recent rain gauge reading.
 
@@ -196,9 +198,9 @@ Edit `k8s/secret.yaml` with your actual database URL before deploying.
 ### Manual Testing Checklist
 - [ ] Deploy to K8s cluster
 - [ ] Verify database migrations succeed
-- [ ] Test `/health` endpoint returns 200
-- [ ] Test `/readings/water-year/2025` returns valid data
-- [ ] Test `/readings/calendar-year/2025` returns valid data
+- [ ] Test `/api/v1/health` endpoint returns 200
+- [ ] Test `/api/v1/readings/water-year/2025` returns valid data
+- [ ] Test `/api/v1/readings/calendar-year/2025` returns valid data
 - [ ] Verify scheduler fetches data at configured interval
 - [ ] Check logs for errors
 - [ ] Verify data deduplication works (no duplicate readings)
