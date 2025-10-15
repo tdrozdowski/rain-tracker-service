@@ -98,7 +98,7 @@ GET {{baseUrl}}/readings/calendar-year/2025
         client.assert(response.body.hasOwnProperty("calendar_year"), "Response doesn't have calendar_year field");
         client.assert(response.body.calendar_year === 2025, "Calendar year is not 2025");
         client.assert(response.body.hasOwnProperty("total_readings"), "Response doesn't have total_readings field");
-        client.assert(response.body.hasOwnProperty("total_rainfall_inches"), "Response doesn't have total_rainfall_inches field");
+        client.assert(response.body.hasOwnProperty("year_to_date_rainfall_inches"), "Response doesn't have total_rainfall_inches field");
         client.assert(response.body.hasOwnProperty("readings"), "Response doesn't have readings field");
         client.assert(Array.isArray(response.body.readings), "Readings is not an array");
     });
