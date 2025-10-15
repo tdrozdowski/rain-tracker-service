@@ -41,23 +41,23 @@ GET {{baseUrl}}/readings/latest
 ###
 
 ### Get Rain Year Readings - Current Year (2025)
-GET {{baseUrl}}/readings/rain-year/2025
+GET {{baseUrl}}/readings/water-year/2025
 
 > {%
-    client.test("Rain year returns 200", function() {
+    client.test("Water year returns 200", function() {
         client.assert(response.status === 200, "Response status is not 200");
     });
 
-    client.test("Rain year has correct structure", function() {
-        client.assert(response.body.hasOwnProperty("rain_year"), "Response doesn't have rain_year field");
-        client.assert(response.body.rain_year === 2025, "Rain year is not 2025");
+    client.test("Water year has correct structure", function() {
+        client.assert(response.body.hasOwnProperty("water_year"), "Response doesn't have water_year field");
+        client.assert(response.body.water_year === 2025, "Water year is not 2025");
         client.assert(response.body.hasOwnProperty("total_readings"), "Response doesn't have total_readings field");
         client.assert(response.body.hasOwnProperty("total_rainfall_inches"), "Response doesn't have total_rainfall_inches field");
         client.assert(response.body.hasOwnProperty("readings"), "Response doesn't have readings field");
         client.assert(Array.isArray(response.body.readings), "Readings is not an array");
     });
 
-    client.test("Rain year readings have correct structure", function() {
+    client.test("Water year readings have correct structure", function() {
         if (response.body.readings.length > 0) {
             const reading = response.body.readings[0];
             client.assert(reading.hasOwnProperty("id"), "Reading doesn't have id field");
@@ -72,15 +72,15 @@ GET {{baseUrl}}/readings/rain-year/2025
 ###
 
 ### Get Rain Year Readings - 2024
-GET {{baseUrl}}/readings/rain-year/2024
+GET {{baseUrl}}/readings/water-year/2024
 
 > {%
-    client.test("Rain year 2024 returns 200", function() {
+    client.test("Water year 2024 returns 200", function() {
         client.assert(response.status === 200, "Response status is not 200");
     });
 
-    client.test("Rain year 2024 has correct year", function() {
-        client.assert(response.body.rain_year === 2024, "Rain year is not 2024");
+    client.test("Water year 2024 has correct year", function() {
+        client.assert(response.body.water_year === 2024, "Water year is not 2024");
     });
 %}
 
@@ -133,7 +133,7 @@ GET {{baseUrl}}/readings/calendar-year/2024
 ###
 
 ### Invalid Rain Year (should still return 200 with empty data)
-GET {{baseUrl}}/readings/rain-year/1900
+GET {{baseUrl}}/readings/water-year/1900
 
 > {%
     client.test("Old rain year returns 200", function() {

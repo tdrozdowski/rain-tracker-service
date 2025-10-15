@@ -17,8 +17,8 @@ pub struct AppState {
 }
 
 #[derive(Serialize)]
-pub struct RainYearSummary {
-    pub rain_year: i32,
+pub struct WaterYearSummary {
+    pub water_year: i32,
     pub total_readings: usize,
     pub total_rainfall_inches: f64,
     pub readings: Vec<StoredReading>,
@@ -51,7 +51,7 @@ pub struct HealthResponse {
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
-        .route("/readings/rain-year/{year}", get(get_rain_year))
+        .route("/readings/water-year/{year}", get(get_water_year))
         .route("/readings/calendar-year/{year}", get(get_calendar_year))
         .route("/readings/latest", get(get_latest))
         .with_state(state)
@@ -81,14 +81,14 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 #[instrument(skip(state), fields(year = %year))]
-async fn get_rain_year(
+async fn get_water_year(
     State(state): State<AppState>,
     Path(year): Path<i32>,
-) -> Result<Json<RainYearSummary>, StatusCode> {
+) -> Result<Json<WaterYearSummary>, StatusCode> {
     debug!("Fetching rain year readings for year {}", year);
     let readings = state
         .db
-        .get_rain_year_readings(year)
+        .get_water_year_readings(year)
         .await
         .map_err(|e| {
             error!("Failed to fetch rain year readings for {}: {}", year, e);
@@ -104,8 +104,8 @@ async fn get_rain_year(
         total_rainfall
     );
 
-    Ok(Json(RainYearSummary {
-        rain_year: year,
+    Ok(Json(WaterYearSummary {
+        water_year: year,
         total_readings: readings.len(),
         total_rainfall_inches: total_rainfall,
         readings,

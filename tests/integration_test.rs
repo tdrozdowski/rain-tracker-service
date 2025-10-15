@@ -1,5 +1,5 @@
 use chrono::{Datelike, Utc};
-use rain_tracker_service::db::{get_rain_year, RainDb};
+use rain_tracker_service::db::{get_water_year, RainDb};
 use rain_tracker_service::fetcher::RainReading;
 use sqlx::postgres::PgPoolOptions;
 
@@ -46,7 +46,7 @@ async fn test_insert_and_retrieve_readings() {
 }
 
 #[tokio::test]
-async fn test_rain_year_queries() {
+async fn test_water_year_queries() {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string());
 
@@ -59,8 +59,8 @@ async fn test_rain_year_queries() {
     let db = RainDb::new(pool);
 
     // Query for current rain year
-    let current_rain_year = get_rain_year(Utc::now());
-    let readings = db.get_rain_year_readings(current_rain_year).await.unwrap();
+    let current_water_year = get_water_year(Utc::now());
+    let readings = db.get_water_year_readings(current_water_year).await.unwrap();
 
     // Should return some readings (assuming we've inserted some)
     assert!(readings.len() >= 0);

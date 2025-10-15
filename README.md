@@ -20,11 +20,11 @@ Returns service health status and latest reading.
 
 ### Get Rain Year Readings
 ```
-GET /readings/rain-year/{year}
+GET /readings/water-year/{year}
 ```
 Returns all readings for a rain year (Oct 1 of year-1 through Sep 30 of year).
 
-Example: `GET /readings/rain-year/2025` returns readings from Oct 1, 2024 to Sep 30, 2025.
+Example: `GET /readings/water-year/2025` returns readings from Oct 1, 2024 to Sep 30, 2025.
 
 ### Get Calendar Year Readings
 ```
@@ -189,7 +189,7 @@ Edit `k8s/secret.yaml` with your actual database URL before deploying.
 
 ### Integration Tests
 - ✅ Database insert and retrieval operations
-- ✅ Rain year query correctness
+- ✅ Water year query correctness
 - ✅ Calendar year query correctness
 - ✅ Latest reading retrieval
 
@@ -197,7 +197,7 @@ Edit `k8s/secret.yaml` with your actual database URL before deploying.
 - [ ] Deploy to K8s cluster
 - [ ] Verify database migrations succeed
 - [ ] Test `/health` endpoint returns 200
-- [ ] Test `/readings/rain-year/2025` returns valid data
+- [ ] Test `/readings/water-year/2025` returns valid data
 - [ ] Test `/readings/calendar-year/2025` returns valid data
 - [ ] Verify scheduler fetches data at configured interval
 - [ ] Check logs for errors

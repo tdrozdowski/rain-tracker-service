@@ -67,14 +67,14 @@ impl RainDb {
         Ok(inserted)
     }
 
-    #[instrument(skip(self), fields(rain_year = %rain_year))]
-    pub async fn get_rain_year_readings(&self, rain_year: i32) -> Result<Vec<StoredReading>, DbError> {
-        // Rain year starts Oct 1 of (rain_year - 1) and ends Sep 30 of rain_year
-        let start_date = NaiveDate::from_ymd_opt(rain_year - 1, 10, 1)
+    #[instrument(skip(self), fields(water_year = %water_year))]
+    pub async fn get_water_year_readings(&self, water_year: i32) -> Result<Vec<StoredReading>, DbError> {
+        // Water year starts Oct 1 of (water_year - 1) and ends Sep 30 of water_year
+        let start_date = NaiveDate::from_ymd_opt(water_year - 1, 10, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-        let end_date = NaiveDate::from_ymd_opt(rain_year, 10, 1)
+        let end_date = NaiveDate::from_ymd_opt(water_year, 10, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
@@ -82,7 +82,7 @@ impl RainDb {
         let start_dt = DateTime::<Utc>::from_naive_utc_and_offset(start_date, Utc);
         let end_dt = DateTime::<Utc>::from_naive_utc_and_offset(end_date, Utc);
 
-        debug!("Querying rain year {} (from {} to {})", rain_year, start_dt, end_dt);
+        debug!("Querying water year {} (from {} to {})", water_year, start_dt, end_dt);
 
         let readings = sqlx::query_as!(
             StoredReading,
@@ -99,7 +99,7 @@ impl RainDb {
         .fetch_all(&self.pool)
         .await?;
 
-        debug!("Found {} readings for rain year {}", readings.len(), rain_year);
+        debug!("Found {} readings for water year {}", readings.len(), water_year);
         Ok(readings)
     }
 
@@ -165,7 +165,7 @@ impl RainDb {
 }
 
 /// Calculates which rain year a given date falls into
-pub fn get_rain_year(date: DateTime<Utc>) -> i32 {
+pub fn get_water_year(date: DateTime<Utc>) -> i32 {
     let year = date.year();
     let month = date.month();
 
@@ -182,14 +182,14 @@ mod tests {
     use chrono::TimeZone;
 
     #[test]
-    fn test_get_rain_year() {
+    fn test_get_water_year() {
         let date1 = Utc.with_ymd_and_hms(2024, 10, 1, 0, 0, 0).unwrap();
-        assert_eq!(get_rain_year(date1), 2025);
+        assert_eq!(get_water_year(date1), 2025);
 
         let date2 = Utc.with_ymd_and_hms(2025, 9, 30, 23, 59, 59).unwrap();
-        assert_eq!(get_rain_year(date2), 2025);
+        assert_eq!(get_water_year(date2), 2025);
 
         let date3 = Utc.with_ymd_and_hms(2025, 10, 1, 0, 0, 0).unwrap();
-        assert_eq!(get_rain_year(date3), 2026);
+        assert_eq!(get_water_year(date3), 2026);
     }
 }
