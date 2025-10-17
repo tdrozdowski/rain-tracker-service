@@ -1,5 +1,6 @@
 use chrono::{Datelike, Utc};
-use rain_tracker_service::db::{get_water_year, RainDb};
+use rain_tracker_service::db::ReadingRepository;
+use rain_tracker_service::services::{ReadingService};
 use rain_tracker_service::fetcher::RainReading;
 use sqlx::postgres::PgPoolOptions;
 
@@ -20,7 +21,8 @@ async fn test_insert_and_retrieve_readings() {
         .await
         .expect("Failed to run migrations");
 
-    let db = RainDb::new(pool);
+    let reading_repo = ReadingRepository::new(pool.clone());
+    let reading_service = ReadingService::new(reading_repo.clone());
 
     // Create test readings
     let readings = vec![
@@ -37,11 +39,11 @@ async fn test_insert_and_retrieve_readings() {
     ];
 
     // Insert readings
-    let inserted = db.insert_readings(&readings).await.unwrap();
+    let inserted = reading_repo.insert_readings(&readings).await.unwrap();
     assert!(inserted > 0);
 
     // Retrieve latest reading
-    let latest = db.get_latest_reading().await.unwrap();
+    let latest = reading_service.get_latest_reading().await.unwrap();
     assert!(latest.is_some());
 }
 
@@ -56,14 +58,21 @@ async fn test_water_year_queries() {
         .await
         .expect("Failed to connect to test database");
 
-    let db = RainDb::new(pool);
+    // Run migrations
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run migrations");
+
+    let reading_repo = ReadingRepository::new(pool.clone());
+    let reading_service = ReadingService::new(reading_repo);
 
     // Query for current rain year
-    let current_water_year = get_water_year(Utc::now());
-    let readings = db.get_water_year_readings(current_water_year).await.unwrap();
+    let current_water_year = ReadingService::get_water_year(Utc::now());
+    let summary = reading_service.get_water_year_summary(current_water_year).await.unwrap();
 
     // Should return some readings (assuming we've inserted some)
-    assert!(readings.len() >= 0);
+    assert!(summary.readings.len() >= 0);
 }
 
 #[tokio::test]
@@ -77,12 +86,19 @@ async fn test_calendar_year_queries() {
         .await
         .expect("Failed to connect to test database");
 
-    let db = RainDb::new(pool);
+    // Run migrations
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run migrations");
+
+    let reading_repo = ReadingRepository::new(pool.clone());
+    let reading_service = ReadingService::new(reading_repo);
 
     // Query for current calendar year
     let current_year = Utc::now().year();
-    let readings = db.get_calendar_year_readings(current_year).await.unwrap();
+    let summary = reading_service.get_calendar_year_summary(current_year).await.unwrap();
 
     // Should return some readings (assuming we've inserted some)
-    assert!(readings.len() >= 0);
+    assert!(summary.readings.len() >= 0);
 }
