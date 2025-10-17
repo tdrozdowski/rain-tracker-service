@@ -14,9 +14,9 @@ Add a new endpoint to scrape gauge summary information from `https://alert.fcd.m
 - Preliminary and unedited data
 
 ### Fields Available
-1. **Gage Name** - Station name (e.g., "4th of July Wash")
+1. **Gauge Name** - Station name (e.g., "4th of July Wash")
 2. **City/Town** - Municipality (e.g., "Agua Caliente")
-3. **Gage ID** - Station identifier (e.g., "41200")
+3. **Gauge ID** - Station identifier (e.g., "41200")
 4. **Elevation (ft)** - Elevation in feet (e.g., "1120")
 5. **Rainfall Past 6 Hours** - Decimal inches (e.g., "0.00")
 6. **Rainfall Past 24 Hours** - Decimal inches (e.g., "0.00")
@@ -114,12 +114,13 @@ impl DbPool {
 }
 ```
 
-**`src/db/models.rs`** - Entity models
+**`src/db/models.rs`** - Entity models and API response types
 ```rust
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::FromRow;
 
+// Database entity models
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct Reading {
     pub id: i64,
@@ -134,7 +135,7 @@ pub struct Reading {
 pub struct GaugeSummary {
     pub id: i64,
     pub station_id: String,
-    pub gage_name: String,
+    pub gauge_name: String,
     pub city_town: Option<String>,
     pub elevation_ft: Option<i32>,
     pub general_location: Option<String>,
@@ -144,6 +145,33 @@ pub struct GaugeSummary {
     pub last_scraped_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+// API response DTOs (to avoid circular dependency between services and api modules)
+#[derive(Debug, Clone, Serialize)]
+pub struct WaterYearSummary {
+    pub water_year: i32,
+    pub total_readings: usize,
+    pub total_rainfall_inches: f64,
+    pub readings: Vec<Reading>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CalendarYearSummary {
+    pub calendar_year: i32,
+    pub total_readings: usize,
+    pub year_to_date_rainfall_inches: f64,
+    pub monthly_summaries: Vec<MonthlySummary>,
+    pub readings: Vec<Reading>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MonthlySummary {
+    pub month: u32,
+    pub month_name: String,
+    pub readings_count: usize,
+    pub monthly_rainfall_inches: f64,
+    pub cumulative_ytd_inches: f64,
 }
 ```
 
@@ -156,6 +184,7 @@ use tracing::{debug, info, instrument};
 use crate::db::{DbError, Reading};
 use crate::fetcher::RainReading;
 
+#[derive(Clone)]
 pub struct ReadingRepository {
     pool: PgPool,
 }
@@ -265,6 +294,7 @@ use tracing::{debug, info, instrument};
 use crate::db::{DbError, GaugeSummary};
 use crate::gauge_list_fetcher::GaugeSummary as FetchedGauge;
 
+#[derive(Clone)]
 pub struct GaugeRepository {
     pool: PgPool,
 }
@@ -284,14 +314,14 @@ impl GaugeRepository {
             let result = sqlx::query!(
                 r#"
                 INSERT INTO gauge_summaries (
-                    station_id, gage_name, city_town, elevation_ft,
+                    station_id, gauge_name, city_town, elevation_ft,
                     general_location, msp_forecast_zone,
                     rainfall_past_6h_inches, rainfall_past_24h_inches,
                     last_scraped_at, updated_at
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
                 ON CONFLICT (station_id) DO UPDATE SET
-                    gage_name = EXCLUDED.gage_name,
+                    gauge_name = EXCLUDED.gauge_name,
                     city_town = EXCLUDED.city_town,
                     elevation_ft = EXCLUDED.elevation_ft,
                     general_location = EXCLUDED.general_location,
@@ -302,7 +332,7 @@ impl GaugeRepository {
                     updated_at = NOW()
                 "#,
                 summary.station_id,
-                summary.gage_name,
+                summary.gauge_name,
                 summary.city_town,
                 summary.elevation_ft,
                 summary.general_location,
@@ -345,12 +375,12 @@ impl GaugeRepository {
         let gauges = sqlx::query_as!(
             GaugeSummary,
             r#"
-            SELECT id, station_id, gage_name, city_town, elevation_ft,
+            SELECT id, station_id, gauge_name, city_town, elevation_ft,
                    general_location, msp_forecast_zone,
                    rainfall_past_6h_inches, rainfall_past_24h_inches,
                    last_scraped_at, created_at, updated_at
             FROM gauge_summaries
-            ORDER BY city_town, gage_name
+            ORDER BY city_town, gauge_name
             LIMIT $1 OFFSET $2
             "#,
             limit,
@@ -370,7 +400,7 @@ impl GaugeRepository {
         let gauge = sqlx::query_as!(
             GaugeSummary,
             r#"
-            SELECT id, station_id, gage_name, city_town, elevation_ft,
+            SELECT id, station_id, gauge_name, city_town, elevation_ft,
                    general_location, msp_forecast_zone,
                    rainfall_past_6h_inches, rainfall_past_24h_inches,
                    last_scraped_at, created_at, updated_at
@@ -429,14 +459,31 @@ impl GaugeRepository {
 
 ---
 
-### 2. Database Schema Changes
+### 2. Add Service Layer for Business Logic
+
+Create a service layer to handle business logic that doesn't belong in repositories. This keeps repositories focused on data access only.
+
+#### New Directory Structure
+```
+src/
+├── services/
+│   ├── mod.rs               # Module exports
+│   ├── reading_service.rs   # Business logic for readings
+│   └── gauge_service.rs     # Business logic for gauges
+```
+
+**Note:** See sections below for full implementation details of ReadingService and GaugeService.
+
+---
+
+### 3. Database Schema Changes
 
 #### Create new table: `gauge_summaries`
 ```sql
 CREATE TABLE IF NOT EXISTS gauge_summaries (
     id BIGSERIAL PRIMARY KEY,
     station_id VARCHAR(20) NOT NULL UNIQUE,
-    gage_name VARCHAR(255) NOT NULL,
+    gauge_name VARCHAR(255) NOT NULL,
     city_town VARCHAR(255),
     elevation_ft INTEGER,
     general_location TEXT,
@@ -461,18 +508,9 @@ CREATE INDEX idx_gauge_last_scraped ON gauge_summaries(last_scraped_at DESC);
 
 ---
 
-### 2. Add Service Layer for Business Logic
+### 4. Service Layer Implementation Details
 
-Create a service layer to handle business logic that doesn't belong in repositories. This keeps repositories focused on data access only.
-
-#### New Directory Structure
-```
-src/
-├── services/
-│   ├── mod.rs               # Module exports
-│   ├── reading_service.rs   # Business logic for readings
-│   └── gauge_service.rs     # Business logic for gauges
-```
+This section provides the full implementation of the service layer mentioned in step 2.
 
 **`src/services/mod.rs`** - Module exports
 ```rust
@@ -486,9 +524,9 @@ pub use gauge_service::GaugeService;
 **`src/services/reading_service.rs`** - Reading business logic
 ```rust
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
-use crate::db::{DbError, Reading, ReadingRepository};
-use crate::api::{WaterYearSummary, CalendarYearSummary, MonthlySummary};
+use crate::db::{DbError, Reading, ReadingRepository, WaterYearSummary, CalendarYearSummary, MonthlySummary};
 
+#[derive(Clone)]
 pub struct ReadingService {
     reading_repo: ReadingRepository,
 }
@@ -590,9 +628,14 @@ impl ReadingService {
     }
 
     fn calculate_monthly_summaries(readings: &[Reading]) -> Vec<MonthlySummary> {
-        // ... move monthly calculation logic here from api.rs ...
-        // (same implementation as currently in api.rs)
-        todo!("Move from api.rs")
+        // Move the existing monthly calculation logic from api.rs get_calendar_year_summary handler
+        // This includes:
+        // - Group readings by month
+        // - Calculate monthly totals and cumulative YTD
+        // - Return Vec<MonthlySummary> with all 12 months (January-December)
+        // - Handle months with no readings (0.0 values)
+        // The implementation should be extracted as-is from the current api.rs
+        unimplemented!("Move existing implementation from api.rs")
     }
 
     /// Determine which water year a date falls into
@@ -612,9 +655,39 @@ impl ReadingService {
 **`src/services/gauge_service.rs`** - Gauge business logic
 ```rust
 use crate::db::{DbError, GaugeSummary, GaugeRepository};
-use crate::api::{GaugeListResponse, PaginationParams};
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 
+// Pagination types (used by API)
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct PaginationParams {
+    pub page: u32,
+    pub page_size: u32,
+}
+
+impl PaginationParams {
+    pub fn offset(&self) -> i64 {
+        ((self.page - 1) * self.page_size) as i64
+    }
+
+    pub fn limit(&self) -> i64 {
+        self.page_size.min(100) as i64
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GaugeListResponse {
+    pub total_gauges: usize,
+    pub page: u32,
+    pub page_size: u32,
+    pub total_pages: u32,
+    pub has_next_page: bool,
+    pub has_prev_page: bool,
+    pub last_scraped_at: Option<DateTime<Utc>>,
+    pub gauges: Vec<GaugeSummary>,
+}
+
+#[derive(Clone)]
 pub struct GaugeService {
     gauge_repo: GaugeRepository,
 }
@@ -676,7 +749,7 @@ impl GaugeService {
 
 ---
 
-### 3. Update AppState to Use Services
+### 5. Update AppState to Use Services
 
 After creating the service layer, update `AppState` to hold services (which internally use repositories).
 
@@ -707,7 +780,7 @@ let summary = state.reading_service.get_water_year_summary(year).await?;
 
 ---
 
-### 4. Refactor Error Types (DRY Principle)
+### 6. Refactor Error Types (DRY Principle)
 
 **Before implementing the new fetcher**, refactor the existing `FetchError` in `src/fetcher.rs` to be more generic and reusable.
 
@@ -742,7 +815,7 @@ Rename `FetchError` to be clear it's for any fetching operation, and update erro
 
 ---
 
-### 5. New Fetcher Module: `gauge_list_fetcher.rs`
+### 7. New Fetcher Module: `gauge_list_fetcher.rs`
 
 Create a new fetcher for parsing the plain text gauge summary file.
 
@@ -758,7 +831,7 @@ use crate::fetch_error::FetchError;  // Reuse unified error type
 #[derive(Debug, Clone)]
 pub struct GaugeSummary {
     pub station_id: String,
-    pub gage_name: String,
+    pub gauge_name: String,
     pub city_town: Option<String>,
     pub elevation_ft: Option<i32>,
     pub rainfall_past_6h_inches: Option<f64>,
@@ -781,14 +854,23 @@ impl GaugeListFetcher {
     }
 
     pub async fn fetch_gauge_list(&self) -> Result<Vec<GaugeSummary>, FetchError> {
-        // Fetch and parse the text file
+        // Fetch the text file
+        let response = self.client.get(&self.url).send().await?;
+        let text = response.text().await?;
+
+        // Parse the content
+        self.parse_text(&text)
     }
 
     fn parse_text(&self, text: &str) -> Result<Vec<GaugeSummary>, FetchError> {
         // Parse the plain text format
+        // See "Parsing Implementation Details" section below for the actual implementation
+        todo!("Implement parsing logic - see section below for strategies")
     }
 }
 ```
+
+**Note:** The actual parsing implementation should follow one of the strategies outlined in the "Parsing Implementation Details" section below. The parse_text method needs to be implemented based on the actual file format.
 
 **Parsing Strategy:**
 - Skip header lines until data rows begin
@@ -802,109 +884,32 @@ impl GaugeListFetcher {
 - General location field may contain multiple spaces, should be captured as remainder of line
 - Handle "None" in MSP Forecast Zone field
 - **Uses unified `FetchError`** - no new error type needed!
+- **Note:** The source data uses "Gage" (older spelling), but we normalize to "gauge" (correct spelling) in our database and code. The parsing logic will map from the source's "gage" terminology to our "gauge" fields.
 
 **File**: `src/gauge_list_fetcher.rs`
 
 ---
 
-### 6. Gauge Repository (Already Created in Step 1)
+### 8. Gauge Repository (Already Created in Step 1)
 
-The `GaugeRepository` was already created as part of the repository pattern refactoring. This section is for reference only.
+The `GaugeRepository` was already created as part of the repository pattern refactoring in Step 1.
 
-#### New Methods:
+**Key Methods Available:**
+- `upsert_summaries(&[FetchedGauge])` - Insert or update gauge summaries (upsert based on station_id)
+- `count()` - Get total count of gauges (for pagination)
+- `find_paginated(offset, limit)` - Get paginated gauge summaries ordered by city/town and name
+- `find_by_id(station_id)` - Get a single gauge summary by station_id
 
-```rust
-impl RainDb {
-    /// Insert or update gauge summaries (upsert based on station_id)
-    pub async fn upsert_gauge_summaries(
-        &self,
-        summaries: &[GaugeSummary]
-    ) -> Result<usize, DbError>
+**Models:**
+- Database entity: `GaugeSummary` (in `db/models.rs`) - includes id, timestamps
+- Fetcher entity: `GaugeSummary` (in `gauge_list_fetcher.rs`) - imported as `FetchedGauge`
 
-    /// Get total count of gauges (for pagination)
-    pub async fn get_gauges_count(&self) -> Result<usize, DbError>
+See Step 1 above for the full implementation of `GaugeRepository`.
 
-    /// Get paginated gauge summaries ordered by city/town and name
-    pub async fn get_gauges_paginated(
-        &self,
-        offset: i64,
-        limit: i64
-    ) -> Result<Vec<GaugeSummary>, DbError>
-
-    /// Get a single gauge summary by station_id
-    pub async fn get_gauge_by_id(
-        &self,
-        station_id: &str
-    ) -> Result<Option<GaugeSummary>, DbError>
-}
-
-#[derive(Debug, Clone, FromRow, Serialize)]
-pub struct GaugeSummary {
-    pub id: i64,
-    pub station_id: String,
-    pub gage_name: String,
-    pub city_town: Option<String>,
-    pub elevation_ft: Option<i32>,
-    pub general_location: Option<String>,
-    pub msp_forecast_zone: Option<String>,
-    pub rainfall_past_6h_inches: Option<f64>,
-    pub rainfall_past_24h_inches: Option<f64>,
-    pub last_scraped_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-```
-
-**Implementation Details:**
-
-**Upsert Logic:**
-- Use `ON CONFLICT (station_id) DO UPDATE` to update existing gauges
-- Update `updated_at` timestamp on each upsert
-- Update `last_scraped_at` to track freshness
-
-**Pagination Queries:**
-```rust
-pub async fn get_gauges_count(&self) -> Result<usize, DbError> {
-    let count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM gauge_summaries"
-    )
-    .fetch_one(&self.pool)
-    .await?;
-
-    Ok(count.unwrap_or(0) as usize)
-}
-
-pub async fn get_gauges_paginated(
-    &self,
-    offset: i64,
-    limit: i64
-) -> Result<Vec<GaugeSummary>, DbError> {
-    let gauges = sqlx::query_as!(
-        GaugeSummary,
-        r#"
-        SELECT id, station_id, gage_name, city_town, elevation_ft,
-               general_location, msp_forecast_zone,
-               rainfall_past_6h_inches, rainfall_past_24h_inches,
-               last_scraped_at, created_at, updated_at
-        FROM gauge_summaries
-        ORDER BY city_town, gage_name
-        LIMIT $1 OFFSET $2
-        "#,
-        limit,
-        offset
-    )
-    .fetch_all(&self.pool)
-    .await?;
-
-    Ok(gauges)
-}
-```
-
-**File**: `src/db.rs` (extend existing)
 
 ---
 
-### 7. Dual-Scheduler System
+### 9. Dual-Scheduler System
 
 Modify scheduler to support multiple fetch jobs with different intervals.
 
@@ -915,10 +920,16 @@ Modify scheduler to support multiple fetch jobs with different intervals.
 
 #### New Scheduler Function:
 ```rust
-#[instrument(skip(fetcher, db), fields(interval_minutes = %interval_minutes))]
+use tokio::time::{self, Duration};
+use tracing::{debug, error, info, instrument};
+
+use crate::db::GaugeRepository;
+use crate::gauge_list_fetcher::GaugeListFetcher;
+
+#[instrument(skip(fetcher, gauge_repo), fields(interval_minutes = %interval_minutes))]
 pub async fn start_gauge_list_scheduler(
     fetcher: GaugeListFetcher,
-    db: RainDb,
+    gauge_repo: GaugeRepository,
     interval_minutes: u64,
 ) {
     let mut interval = time::interval(Duration::from_secs(interval_minutes * 60));
@@ -929,7 +940,7 @@ pub async fn start_gauge_list_scheduler(
         interval.tick().await;
         debug!("Gauge list scheduler tick - initiating fetch");
 
-        match fetch_and_store_gauge_list(&fetcher, &db).await {
+        match fetch_and_store_gauge_list(&fetcher, &gauge_repo).await {
             Ok(count) => {
                 info!("Successfully fetched and stored {} gauge summaries", count);
             }
@@ -940,17 +951,17 @@ pub async fn start_gauge_list_scheduler(
     }
 }
 
-#[instrument(skip(fetcher, db))]
+#[instrument(skip(fetcher, gauge_repo))]
 async fn fetch_and_store_gauge_list(
     fetcher: &GaugeListFetcher,
-    db: &RainDb,
+    gauge_repo: &GaugeRepository,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     debug!("Fetching gauge list");
     let gauges = fetcher.fetch_gauge_list().await?;
     info!("Fetched {} gauges from list", gauges.len());
 
     debug!("Upserting gauge summaries into database");
-    let upserted = db.upsert_gauge_summaries(&gauges).await?;
+    let upserted = gauge_repo.upsert_summaries(&gauges).await?;
     Ok(upserted)
 }
 ```
@@ -981,7 +992,7 @@ GAUGE_LIST_INTERVAL_MINUTES=60  # scrape gauge list hourly (less frequent)
 
 ---
 
-### 8. API Endpoints
+### 10. API Endpoints
 
 Add new routes to `src/api.rs`:
 
@@ -993,7 +1004,7 @@ Add new routes to `src/api.rs`:
   - `page` (optional, default: 1) - Page number (1-indexed)
   - `page_size` (optional, default: 50, max: 100) - Number of results per page
 - Response includes pagination metadata
-- Ordered by city/town, then gage name
+- Ordered by city/town, then gauge name
 
 **Response Example:**
 ```json
@@ -1009,7 +1020,7 @@ Add new routes to `src/api.rs`:
     {
       "id": 1,
       "station_id": "41200",
-      "gage_name": "4th of July Wash",
+      "gauge_name": "4th of July Wash",
       "city_town": "Agua Caliente",
       "elevation_ft": 1120,
       "general_location": "21 mi. W of Old US80 on Agua Caliente Road",
@@ -1034,7 +1045,7 @@ Add new routes to `src/api.rs`:
 {
   "id": 1,
   "station_id": "41200",
-  "gage_name": "4th of July Wash",
+  "gauge_name": "4th of July Wash",
   "city_town": "Agua Caliente",
   "elevation_ft": 1120,
   "general_location": "21 mi. W of Old US80 on Agua Caliente Road",
@@ -1094,6 +1105,9 @@ pub struct GaugeListResponse {
 ```
 
 #### Handler Functions:
+
+**Important:** Handlers should use the **service layer**, not repositories directly. This maintains proper separation of concerns and keeps business logic in services.
+
 ```rust
 #[instrument(skip(state))]
 async fn get_all_gauges(
@@ -1108,42 +1122,21 @@ async fn get_all_gauges(
 
     debug!("Fetching gauge summaries (page={}, page_size={})", params.page, params.page_size);
 
-    // Get total count for pagination metadata
-    let total_gauges = state.db.get_gauges_count().await.map_err(|e| {
-        error!("Failed to get gauges count: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // Get paginated gauges
-    let gauges = state.db.get_gauges_paginated(params.offset(), params.limit()).await.map_err(|e| {
-        error!("Failed to fetch gauge summaries: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // Calculate pagination metadata
-    let total_pages = ((total_gauges as f64) / (params.page_size as f64)).ceil() as u32;
-    let has_next_page = params.page < total_pages;
-    let has_prev_page = params.page > 1;
-
-    let last_scraped_at = gauges.iter()
-        .map(|g| g.last_scraped_at)
-        .max();
+    // Call service layer (which handles business logic and pagination)
+    let response = state.gauge_service
+        .get_gauges_paginated(&params)
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch gauges: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     info!(
         "Retrieved {} gauge summaries (page {}/{}, total={})",
-        gauges.len(), params.page, total_pages, total_gauges
+        response.gauges.len(), response.page, response.total_pages, response.total_gauges
     );
 
-    Ok(Json(GaugeListResponse {
-        total_gauges,
-        page: params.page,
-        page_size: params.page_size,
-        total_pages,
-        has_next_page,
-        has_prev_page,
-        last_scraped_at,
-        gauges,
-    }))
+    Ok(Json(response))
 }
 
 #[instrument(skip(state), fields(station_id = %station_id))]
@@ -1152,7 +1145,11 @@ async fn get_gauge_by_id(
     Path(station_id): Path<String>,
 ) -> Result<Json<GaugeSummary>, StatusCode> {
     debug!("Fetching gauge summary for station {}", station_id);
-    let gauge = state.db.get_gauge_by_id(&station_id).await
+
+    // Call service layer
+    let gauge = state.gauge_service
+        .get_gauge_by_id(&station_id)
+        .await
         .map_err(|e| {
             error!("Failed to fetch gauge {}: {}", station_id, e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -1187,42 +1184,268 @@ pub fn create_router(state: AppState) -> Router {
 
 ---
 
-### 9. Main Application Wiring
+### 11. Main Application Wiring
 
-Update `src/main.rs` to:
+Restructure `src/main.rs` to support CLI commands while keeping tokio schedulers as the default.
 
-1. **Add module declaration:**
+#### Design Decision: Tokio Schedulers + CLI Commands
+
+We'll use **tokio tasks for schedulers** (simple, single deployment) but structure the code to support **independent job execution via CLI commands**. This provides:
+
+- ✅ Simple deployment (single binary, no extra infrastructure)
+- ✅ Easy manual testing/triggering
+- ✅ Clear migration path to K8s CronJobs if needed later
+- ✅ Can run jobs independently without server
+
+**When to migrate to K8s CronJobs:**
+- Jobs start taking >5 minutes
+- Need independent scaling/monitoring per job
+- Want separate alerting per job type
+- Need different schedules per environment
+
+#### Implementation
+
+**`src/main.rs`** - Add CLI command support:
+
 ```rust
-mod gauge_list_fetcher;
+use std::env;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+
+    // Parse CLI arguments
+    let args: Vec<String> = env::args().collect();
+
+    match args.get(1).map(|s| s.as_str()) {
+        Some("fetch-readings") => {
+            info!("Running one-time fetch of gauge readings");
+            run_fetch_readings_once().await?;
+        }
+        Some("fetch-gauge-list") => {
+            info!("Running one-time fetch of gauge list");
+            run_fetch_gauge_list_once().await?;
+        }
+        Some("help") | Some("--help") | Some("-h") => {
+            print_help();
+        }
+        None => {
+            // Default: Run API server + both schedulers
+            info!("Starting server with schedulers");
+            run_server_with_schedulers().await?;
+        }
+        Some(cmd) => {
+            eprintln!("Unknown command: {}", cmd);
+            print_help();
+            std::process::exit(1);
+        }
+    }
+
+    Ok(())
+}
+
+fn print_help() {
+    println!("Rain Tracker Service");
+    println!();
+    println!("USAGE:");
+    println!("    rain-tracker-service [COMMAND]");
+    println!();
+    println!("COMMANDS:");
+    println!("    (none)           Start API server with background schedulers (default)");
+    println!("    fetch-readings   Fetch individual gauge readings once and exit");
+    println!("    fetch-gauge-list Fetch gauge list/summary once and exit");
+    println!("    help             Show this help message");
+}
+
+/// Run a single fetch of individual gauge readings
+async fn run_fetch_readings_once() -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::from_env()?;
+    let pool = connect_to_database(&config.database_url).await?;
+
+    let fetcher = RainGaugeFetcher::new(config.gauge_url);
+    let reading_repo = ReadingRepository::new(pool);
+
+    info!("Fetching readings from {}", config.gauge_url);
+    let readings = fetcher.fetch_readings().await?;
+    info!("Fetched {} readings", readings.len());
+
+    info!("Storing readings in database");
+    let inserted = reading_repo.insert_readings(&readings).await?;
+    info!("Successfully inserted {} readings", inserted);
+
+    Ok(())
+}
+
+/// Run a single fetch of gauge list/summary
+async fn run_fetch_gauge_list_once() -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::from_env()?;
+    let pool = connect_to_database(&config.database_url).await?;
+
+    let fetcher = GaugeListFetcher::new(config.gauge_list_url);
+    let gauge_repo = GaugeRepository::new(pool);
+
+    info!("Fetching gauge list from {}", config.gauge_list_url);
+    let gauges = fetcher.fetch_gauge_list().await?;
+    info!("Fetched {} gauges", gauges.len());
+
+    info!("Upserting gauges in database");
+    let upserted = gauge_repo.upsert_summaries(&gauges).await?;
+    info!("Successfully upserted {} gauges", upserted);
+
+    Ok(())
+}
+
+/// Run API server with both background schedulers
+async fn run_server_with_schedulers() -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::from_env()?;
+    let pool = connect_to_database(&config.database_url).await?;
+
+    // Initialize repositories
+    let reading_repo = ReadingRepository::new(pool.clone());
+    let gauge_repo = GaugeRepository::new(pool.clone());
+
+    // Initialize services
+    let reading_service = ReadingService::new(reading_repo.clone());
+    let gauge_service = GaugeService::new(gauge_repo.clone());
+
+    // Create API state
+    let state = AppState {
+        reading_service,
+        gauge_service,
+    };
+
+    // Initialize fetchers
+    let reading_fetcher = RainGaugeFetcher::new(config.gauge_url.clone());
+    let gauge_list_fetcher = GaugeListFetcher::new(config.gauge_list_url.clone());
+
+    // Spawn reading scheduler (15 min default)
+    let reading_scheduler_repo = reading_repo.clone();
+    tokio::spawn(async move {
+        scheduler::start_fetch_scheduler(
+            reading_fetcher,
+            reading_scheduler_repo,
+            config.fetch_interval_minutes,
+        )
+        .await;
+    });
+
+    // Spawn gauge list scheduler (60 min default)
+    let gauge_scheduler_repo = gauge_repo.clone();
+    tokio::spawn(async move {
+        scheduler::start_gauge_list_scheduler(
+            gauge_list_fetcher,
+            gauge_scheduler_repo,
+            config.gauge_list_interval_minutes,
+        )
+        .await;
+    });
+
+    // Start API server
+    let router = create_router(state);
+    let listener = tokio::net::TcpListener::bind(&config.bind_address).await?;
+
+    info!("Server listening on {}", config.bind_address);
+    axum::serve(listener, router).await?;
+
+    Ok(())
+}
 ```
 
-2. **Update config loading** to include new env variables
+**Testing the CLI:**
 
-3. **Initialize GaugeListFetcher:**
-```rust
-let gauge_list_fetcher = GaugeListFetcher::new(config.gauge_list_url.clone());
+```bash
+# Run server with schedulers (default)
+cargo run
+
+# Run one-time fetch of readings
+cargo run -- fetch-readings
+
+# Run one-time fetch of gauge list
+cargo run -- fetch-gauge-list
+
+# Show help
+cargo run -- help
 ```
 
-4. **Spawn gauge list scheduler as separate task:**
-```rust
-let gauge_list_db = db.clone();
-tokio::spawn(async move {
-    scheduler::start_gauge_list_scheduler(
-        gauge_list_fetcher,
-        gauge_list_db,
-        config.gauge_list_interval_minutes,
-    )
-    .await;
-});
+**Docker/K8s Usage:**
+
+```dockerfile
+# In Dockerfile, the default CMD runs the server
+CMD ["./rain-tracker-service"]
+
+# But you can override for one-time jobs
+docker run rain-tracker-service fetch-readings
 ```
 
-5. **Keep existing reading scheduler running concurrently**
+**Future K8s CronJob Migration (when needed):**
 
-**File**: `src/main.rs` (extend)
+```yaml
+# k8s/cronjob-fetch-readings.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-readings
+spec:
+  schedule: "*/15 * * * *"  # Every 15 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: fetch-readings
+            image: rain-tracker-service:latest
+            args: ["fetch-readings"]
+          restartPolicy: OnFailure
+```
+
+**Files to modify:**
+- `src/main.rs` - Complete restructure with CLI commands
+- `src/lib.rs` - Add `pub mod gauge_list_fetcher;`
+- `README.md` - Document CLI commands
+
+**README.md updates:**
+
+```markdown
+## Usage
+
+### Running the Server
+
+By default, the service runs an API server with background schedulers:
+
+```bash
+cargo run
+```
+
+### CLI Commands
+
+The service supports the following CLI commands for manual operations:
+
+```bash
+# Fetch individual gauge readings once and exit
+cargo run -- fetch-readings
+
+# Fetch gauge list/summary once and exit
+cargo run -- fetch-gauge-list
+
+# Show help
+cargo run -- help
+```
+
+### Docker
+
+```bash
+# Run server (default)
+docker run rain-tracker-service
+
+# Run one-time fetch
+docker run rain-tracker-service fetch-readings
+```
+```
 
 ---
 
-### 10. Update lib.rs Module Exports
+### 12. Update lib.rs Module Exports
 
 Add new module to `src/lib.rs`:
 ```rust
@@ -1336,11 +1559,18 @@ pub mod gauge_list_fetcher;
     - Add routes to router: `/gauges` and `/gauges/:station_id`
 
 13. **Main Application Wiring** (src/main.rs)
-    - Initialize `GaugeRepository` from pool
-    - Initialize `GaugeService` with repository
-    - Initialize `GaugeListFetcher`
-    - Update `AppState` to include both services (reading and gauge)
-    - Spawn gauge list scheduler task (runs concurrently with existing scheduler)
+    - Restructure main.rs to support CLI commands:
+      - Add `run_fetch_readings_once()` function for one-time reading fetch
+      - Add `run_fetch_gauge_list_once()` function for one-time gauge list fetch
+      - Add `run_server_with_schedulers()` function for default server mode
+      - Add CLI argument parsing (fetch-readings, fetch-gauge-list, help)
+    - In server mode:
+      - Initialize `GaugeRepository` from pool
+      - Initialize `GaugeService` with repository
+      - Initialize `GaugeListFetcher`
+      - Update `AppState` to include both services (reading and gauge)
+      - Spawn both scheduler tasks (readings and gauge list) concurrently
+    - Test CLI commands work independently
 
 ### Phase 3: Testing
 
@@ -1447,7 +1677,7 @@ async fn test_upsert_summaries_insert(pool: PgPool) {
     let summaries = vec![
         GaugeSummary {
             station_id: "12345".to_string(),
-            gage_name: "Test Gauge".to_string(),
+            gauge_name: "Test Gauge".to_string(),
             // ... other fields
         },
     ];
@@ -1467,7 +1697,7 @@ async fn test_upsert_summaries_update(pool: PgPool) {
     let updated = vec![
         GaugeSummary {
             station_id: "12345".to_string(),
-            gage_name: "Updated Gauge".to_string(),
+            gauge_name: "Updated Gauge".to_string(),
             // ... other fields
         },
     ];
@@ -1476,7 +1706,7 @@ async fn test_upsert_summaries_update(pool: PgPool) {
 
     // Verify update occurred
     let gauge = repo.find_by_id("12345").await.unwrap().unwrap();
-    assert_eq!(gauge.gage_name, "Updated Gauge");
+    assert_eq!(gauge.gauge_name, "Updated Gauge");
 }
 
 #[sqlx::test]
@@ -1639,7 +1869,7 @@ async fn test_get_gauges_paginated() {
                 GaugeSummary {
                     id: offset as i64 + 1,
                     station_id: format!("{}", offset + 1),
-                    gage_name: "Test Gauge".to_string(),
+                    gauge_name: "Test Gauge".to_string(),
                     // ... other fields
                 },
             ])
@@ -1733,7 +1963,7 @@ mod tests {
 
         let gauge = result.unwrap();
         assert_eq!(gauge.station_id, "41200");
-        assert_eq!(gauge.gage_name, "4th of July Wash");
+        assert_eq!(gauge.gauge_name, "4th of July Wash");
         assert_eq!(gauge.city_town, Some("Agua Caliente".to_string()));
         assert_eq!(gauge.elevation_ft, Some(1120));
         assert_eq!(gauge.rainfall_past_6h_inches, Some(0.00));
@@ -1753,10 +1983,10 @@ mod tests {
     #[test]
     fn test_parse_text_with_headers() {
         let text = r#"
-Precipitation Gage Report
+Precipitation Gauge Report
 Date: 10/15/25 0818
 
-Gage Name              City/Town       ID      Elev   6hr    24hr   Zone   Location
+Gauge Name              City/Town       ID      Elev   6hr    24hr   Zone   Location
 4th of July Wash        Agua Caliente   41200   1120   0.00   0.00   None   21 mi. W of Old US80 on Agua Caliente Road
 Columbus Wash           Agua Caliente   40800    705   0.00   0.00   None   8 mi. N of Agua Caliente
         "#;
@@ -1787,8 +2017,8 @@ Columbus Wash           Agua Caliente   40800    705   0.00   0.00   None   8 mi
 
     #[test]
     fn test_is_header_line() {
-        assert!(is_header_line("Precipitation Gage Report"));
-        assert!(is_header_line("Gage Name              City/Town"));
+        assert!(is_header_line("Precipitation Gauge Report"));
+        assert!(is_header_line("Gauge Name              City/Town"));
         assert!(is_header_line(""));
         assert!(!is_header_line("Columbus Wash           Agua Caliente   40800"));
     }
@@ -1872,258 +2102,344 @@ mod tests {
 
 ---
 
-### 5. Integration Tests: API Endpoints
+### 5. API Testing: JetBrains HTTP Client
 
-**Location**: `tests/api_integration_test.rs`
+**Location**: `http/api-tests.http`
 
-**What to test**: Full HTTP request/response cycle with test database
+**What to test**: Real API endpoints against running service (manual testing + validation)
 
-**`tests/api_integration_test.rs`**
-```rust
-use axum::http::StatusCode;
-use axum_test::TestServer;
-use sqlx::PgPool;
+**Why HTTP Client instead of Rust integration tests:**
+- ✅ Simpler: No TestServer boilerplate or test database setup
+- ✅ Real integration: Tests actual running service
+- ✅ Better DX: Run directly in IDE, already using for existing endpoints
+- ✅ Less maintenance: Minimal code, no dependencies like `axum_test`
+- ✅ Living documentation: Serves as API examples
 
-#[sqlx::test]
-async fn test_get_water_year_endpoint(pool: PgPool) {
-    let app = create_test_app(pool.clone()).await;
-    let server = TestServer::new(app).unwrap();
+**Trade-offs:**
+- ❌ Manual execution (not in `cargo test`)
+- ❌ Requires running server first
+- ✅ Can automate in CI later with `intellij-http-client` CLI if needed
 
-    // Insert test data
-    // ...
+**Extend `http/api-tests.http` with new gauge endpoints:**
 
-    let response = server
-        .get("/api/v1/readings/water-year/2025")
-        .await;
+```http
+###############################################################################
+# Gauge Endpoints
+###############################################################################
 
-    response.assert_status(StatusCode::OK);
+### Get All Gauges (Default pagination - page 1, 50 per page)
+GET {{baseUrl}}/api/v1/gauges
 
-    let body: WaterYearSummary = response.json();
-    assert_eq!(body.water_year, 2025);
-    assert!(body.total_readings > 0);
-}
+> {%
+    client.test("Get all gauges returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
 
-#[sqlx::test]
-async fn test_get_calendar_year_endpoint(pool: PgPool) {
-    let app = create_test_app(pool.clone()).await;
-    let server = TestServer::new(app).unwrap();
+    client.test("Get all gauges has correct structure", function() {
+        client.assert(response.body.hasOwnProperty("total_gauges"), "Missing total_gauges");
+        client.assert(response.body.hasOwnProperty("page"), "Missing page");
+        client.assert(response.body.page === 1, "Page is not 1");
+        client.assert(response.body.hasOwnProperty("page_size"), "Missing page_size");
+        client.assert(response.body.page_size === 50, "Page size is not 50");
+        client.assert(response.body.hasOwnProperty("total_pages"), "Missing total_pages");
+        client.assert(response.body.hasOwnProperty("has_next_page"), "Missing has_next_page");
+        client.assert(response.body.hasOwnProperty("has_prev_page"), "Missing has_prev_page");
+        client.assert(response.body.has_prev_page === false, "First page should not have prev");
+        client.assert(response.body.hasOwnProperty("gauges"), "Missing gauges");
+        client.assert(Array.isArray(response.body.gauges), "Gauges is not an array");
+    });
 
-    let response = server
-        .get("/api/v1/readings/calendar-year/2024")
-        .await;
+    client.test("Gauge objects have correct structure", function() {
+        if (response.body.gauges.length > 0) {
+            const gauge = response.body.gauges[0];
+            client.assert(gauge.hasOwnProperty("id"), "Gauge missing id");
+            client.assert(gauge.hasOwnProperty("station_id"), "Gauge missing station_id");
+            client.assert(gauge.hasOwnProperty("gauge_name"), "Gauge missing gauge_name");
+            client.assert(gauge.hasOwnProperty("city_town"), "Gauge missing city_town");
+            client.assert(gauge.hasOwnProperty("elevation_ft"), "Gauge missing elevation_ft");
+            client.assert(gauge.hasOwnProperty("rainfall_past_6h_inches"), "Gauge missing rainfall_past_6h_inches");
+            client.assert(gauge.hasOwnProperty("rainfall_past_24h_inches"), "Gauge missing rainfall_past_24h_inches");
+            client.assert(gauge.hasOwnProperty("last_scraped_at"), "Gauge missing last_scraped_at");
+        }
+    });
+%}
 
-    response.assert_status(StatusCode::OK);
+###
 
-    let body: CalendarYearSummary = response.json();
-    assert_eq!(body.calendar_year, 2024);
-    assert_eq!(body.monthly_summaries.len(), 12);
-}
+### Get All Gauges (Custom pagination - page 2, 25 per page)
+GET {{baseUrl}}/api/v1/gauges?page=2&page_size=25
 
-#[sqlx::test]
-async fn test_get_latest_reading_endpoint(pool: PgPool) {
-    let app = create_test_app(pool.clone()).await;
-    let server = TestServer::new(app).unwrap();
+> {%
+    client.test("Custom pagination returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
 
-    let response = server
-        .get("/api/v1/readings/latest")
-        .await;
+    client.test("Custom pagination has correct values", function() {
+        client.assert(response.body.page === 2, "Page is not 2");
+        client.assert(response.body.page_size === 25, "Page size is not 25");
+        client.assert(response.body.gauges.length <= 25, "Too many gauges returned");
+    });
 
-    response.assert_status(StatusCode::OK);
-}
+    client.test("Pagination metadata is consistent", function() {
+        const totalPages = Math.ceil(response.body.total_gauges / 25);
+        client.assert(response.body.total_pages === totalPages, "Total pages calculation incorrect");
 
-#[sqlx::test]
-async fn test_get_all_gauges_endpoint(pool: PgPool) {
-    let app = create_test_app(pool.clone()).await;
-    let server = TestServer::new(app).unwrap();
+        if (response.body.page < response.body.total_pages) {
+            client.assert(response.body.has_next_page === true, "Should have next page");
+        }
+        if (response.body.page > 1) {
+            client.assert(response.body.has_prev_page === true, "Should have prev page");
+        }
+    });
+%}
 
-    // Insert test gauges
-    // ...
+###
 
-    let response = server
-        .get("/api/v1/gauges?page=1&page_size=50")
-        .await;
+### Get Gauge by ID (Valid - known gauge)
+GET {{baseUrl}}/api/v1/gauges/59700
 
-    response.assert_status(StatusCode::OK);
+> {%
+    client.test("Get gauge by ID returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
 
-    let body: GaugeListResponse = response.json();
-    assert_eq!(body.page, 1);
-    assert_eq!(body.page_size, 50);
-    assert!(body.gauges.len() <= 50);
-}
+    client.test("Get gauge by ID returns correct structure", function() {
+        client.assert(response.body.hasOwnProperty("station_id"), "Missing station_id");
+        client.assert(response.body.station_id === "59700", "Station ID doesn't match");
+        client.assert(response.body.hasOwnProperty("gauge_name"), "Missing gauge_name");
+        client.assert(response.body.hasOwnProperty("city_town"), "Missing city_town");
+    });
+%}
 
-#[sqlx::test]
-async fn test_get_all_gauges_pagination(pool: PgPool) {
-    let app = create_test_app(pool.clone()).await;
-    let server = TestServer::new(app).unwrap();
+###
 
-    // Insert 150 test gauges
-    // ...
+### Get Gauge by ID (Not Found)
+GET {{baseUrl}}/api/v1/gauges/99999
 
-    let response1 = server.get("/api/v1/gauges?page=1&page_size=50").await;
-    let body1: GaugeListResponse = response1.json();
-    assert_eq!(body1.has_next_page, true);
-    assert_eq!(body1.has_prev_page, false);
+> {%
+    client.test("Get non-existent gauge returns 404", function() {
+        client.assert(response.status === 404, "Response status is not 404");
+    });
+%}
 
-    let response2 = server.get("/api/v1/gauges?page=2&page_size=50").await;
-    let body2: GaugeListResponse = response2.json();
-    assert_eq!(body2.has_next_page, true);
-    assert_eq!(body2.has_prev_page, true);
+###
 
-    let response3 = server.get("/api/v1/gauges?page=3&page_size=50").await;
-    let body3: GaugeListResponse = response3.json();
-    assert_eq!(body3.has_next_page, false);
-    assert_eq!(body3.has_prev_page, true);
-}
+### Get Gauges with Invalid Pagination (page = 0)
+GET {{baseUrl}}/api/v1/gauges?page=0&page_size=50
 
-#[sqlx::test]
-async fn test_get_gauge_by_id_found(pool: PgPool) {
-    let app = create_test_app(pool.clone()).await;
-    let server = TestServer::new(app).unwrap();
+> {%
+    client.test("Invalid page number returns 400", function() {
+        client.assert(response.status === 400, "Response status is not 400");
+    });
+%}
 
-    // Insert test gauge with known ID
-    // ...
+###
 
-    let response = server
-        .get("/api/v1/gauges/59700")
-        .await;
+### Get Gauges with Invalid Pagination (page_size > 100)
+GET {{baseUrl}}/api/v1/gauges?page=1&page_size=101
 
-    response.assert_status(StatusCode::OK);
+> {%
+    client.test("Page size too large returns 400", function() {
+        client.assert(response.status === 400, "Response status is not 400");
+    });
+%}
 
-    let body: GaugeSummary = response.json();
-    assert_eq!(body.station_id, "59700");
-}
+###
 
-#[sqlx::test]
-async fn test_get_gauge_by_id_not_found(pool: PgPool) {
-    let app = create_test_app(pool.clone()).await;
-    let server = TestServer::new(app).unwrap();
+### Get Gauges with Invalid Pagination (page_size = 0)
+GET {{baseUrl}}/api/v1/gauges?page=1&page_size=0
 
-    let response = server
-        .get("/api/v1/gauges/99999")
-        .await;
+> {%
+    client.test("Page size zero returns 400", function() {
+        client.assert(response.status === 400, "Response status is not 400");
+    });
+%}
 
-    response.assert_status(StatusCode::NOT_FOUND);
-}
-
-#[sqlx::test]
-async fn test_invalid_pagination_params(pool: PgPool) {
-    let app = create_test_app(pool.clone()).await;
-    let server = TestServer::new(app).unwrap();
-
-    let response = server
-        .get("/api/v1/gauges?page=0&page_size=50")
-        .await;
-
-    response.assert_status(StatusCode::BAD_REQUEST);
-}
-
-async fn create_test_app(pool: PgPool) -> Router {
-    let reading_repo = ReadingRepository::new(pool.clone());
-    let gauge_repo = GaugeRepository::new(pool.clone());
-
-    let reading_service = ReadingService::new(reading_repo);
-    let gauge_service = GaugeService::new(gauge_repo);
-
-    let state = AppState {
-        reading_service,
-        gauge_service,
-    };
-
-    create_router(state)
-}
+###
 ```
+
+**How to run:**
+1. Start the server: `cargo run`
+2. Open `http/api-tests.http` in RustRover
+3. Click the green play button next to any request
+4. View results in the HTTP Client tool window
+
+**Optional CI Integration (future):**
+
+You can automate HTTP Client tests in CI using the official JetBrains tooling:
+
+**Option 1: GitHub Action (requires docker-compose)**
+
+```yaml
+# .github/workflows/api-tests.yml
+name: API Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Create .env file for docker-compose
+        run: |
+          cat > .env << EOF
+          DATABASE_URL=postgres://postgres:postgres@db:5432/rain_tracker
+          GAUGE_URL=https://alert.fcd.maricopa.gov/php/showdata4.php?ID=59700&NM=1000
+          GAUGE_LIST_URL=https://alert.fcd.maricopa.gov/alert/Rain/ev_rain.txt
+          FETCH_INTERVAL_MINUTES=15
+          GAUGE_LIST_INTERVAL_MINUTES=60
+          BIND_ADDRESS=0.0.0.0:3000
+          EOF
+
+      - name: Start services with docker-compose
+        run: |
+          docker-compose up -d
+          # Wait for service to be healthy
+          timeout 60 bash -c 'until curl -f http://localhost:3000/api/v1/health; do sleep 2; done'
+
+      - name: Run migrations (if needed)
+        run: |
+          docker-compose exec -T app sqlx migrate run || true
+
+      - name: Run HTTP Client tests
+        uses: jetbrains/intellij-http-client-action@v1
+        with:
+          files: http/api-tests.http
+          env-file: http/http-client.env.json
+          env: ci  # Use 'ci' environment with localhost:3000
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker-compose logs app
+          docker-compose logs db
+
+      - name: Cleanup
+        if: always()
+        run: docker-compose down -v
+```
+
+**Note:** This requires you to have a `docker-compose.yml` in your repo that:
+- Starts PostgreSQL database
+- Runs migrations
+- Starts the rain-tracker-service
+- Exposes port 3000
+
+**Alternative: Skip CI API tests entirely**
+
+Since API tests require the full stack (database + service), consider:
+- ✅ Keep API tests for **manual/local testing only** (run in IDE)
+- ✅ Focus CI on **unit tests** (repo, service, fetchers)
+- ✅ Run full integration tests **locally** before pushing
+- ✅ Add API tests to **deployment verification** (smoke tests on staging)
+
+This is often more practical than trying to replicate the full environment in CI.
+
+**Option 2: IntelliJ HTTP Client CLI**
+
+**Installation:**
+
+```bash
+# macOS (Homebrew)
+brew install ijhttp
+
+# Linux/macOS (ZIP archive)
+curl -f -L -o ijhttp.zip "https://jb.gg/ijhttp/latest"
+unzip ijhttp.zip
+./ijhttp --version
+
+# Docker (any platform)
+docker pull jetbrains/intellij-http-client
+```
+
+**Run tests:**
+
+```bash
+# Using installed CLI
+ijhttp http/api-tests.http --env dev --env-file http/http-client.env.json
+
+# Using Docker
+docker run --rm -v $PWD:/workdir jetbrains/intellij-http-client \
+  http/api-tests.http --env dev --env-file http/http-client.env.json
+```
+
+**Requirements:**
+- ZIP/Homebrew: Requires JDK 17 or newer
+- Docker: No additional requirements
+- No IntelliJ IDEA license required
 
 ---
 
-### 6. Integration Tests: Scheduler
+### 6. Manual Testing: Scheduler Jobs
 
-**Location**: `tests/scheduler_integration_test.rs`
+**What to test**: Verify schedulers run correctly and insert data
 
-**What to test**: Scheduler runs correctly and inserts data
+**Instead of integration tests**, use the CLI commands for manual verification:
 
-**`tests/scheduler_integration_test.rs`**
-```rust
-#[tokio::test]
-async fn test_fetch_and_store_readings() {
-    let pool = setup_test_db().await;
-    let repo = ReadingRepository::new(pool.clone());
+```bash
+# Test reading fetch works
+cargo run -- fetch-readings
 
-    // Use a mock server to simulate the gauge endpoint
-    let mock_server = mockito::Server::new_async().await;
-    let mock = mock_server
-        .mock("GET", "/")
-        .with_status(200)
-        .with_body(include_str!("fixtures/gauge_response.html"))
-        .create_async()
-        .await;
+# Verify in database
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM rain_readings;"
 
-    let fetcher = RainGaugeFetcher::new(mock_server.url());
+# Test gauge list fetch works
+cargo run -- fetch-gauge-list
 
-    let result = fetch_and_store(&fetcher, &repo).await;
-
-    assert!(result.is_ok());
-    assert!(result.unwrap() > 0);
-
-    mock.assert_async().await;
-}
-
-#[tokio::test]
-async fn test_fetch_and_store_gauge_list() {
-    let pool = setup_test_db().await;
-    let repo = GaugeRepository::new(pool.clone());
-
-    let mock_server = mockito::Server::new_async().await;
-    let mock = mock_server
-        .mock("GET", "/")
-        .with_status(200)
-        .with_body(include_str!("fixtures/gauge_list.txt"))
-        .create_async()
-        .await;
-
-    let fetcher = GaugeListFetcher::new(mock_server.url());
-
-    let result = fetch_and_store_gauge_list(&fetcher, &repo).await;
-
-    assert!(result.is_ok());
-    assert!(result.unwrap() > 0);
-
-    mock.assert_async().await;
-}
+# Verify in database
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM gauge_summaries;"
 ```
 
----
+**Why skip scheduler integration tests:**
+- Scheduler logic is simple (just calls fetcher + repository)
+- Fetchers have their own unit tests (parsing)
+- Repositories have their own unit tests (DB operations)
+- CLI commands provide easy manual verification
+- Avoids complex mock server setup (`mockito`)
 
-### 7. Test Fixtures
-
-**Location**: `tests/fixtures/`
-
-Create fixture files for testing:
-
-**`tests/fixtures/gauge_response.html`** - Sample HTML from real gauge
-**`tests/fixtures/gauge_list.txt`** - Sample text from real gauge list
+**If you really need automated scheduler tests:**
+- Use the CLI commands in a shell script
+- Run against a test database
+- Much simpler than mocking HTTP servers
 
 ---
 
 ### Test Coverage Goals
 
-- **Repository Layer**: 80%+ coverage
-- **Service Layer**: 90%+ coverage (pure business logic, should be highly testable)
-- **Fetchers**: 85%+ coverage (parsing logic)
-- **API Handlers**: 75%+ coverage (integration tests)
+- **Repository Layer**: 80%+ coverage (unit tests with sqlx::test)
+- **Service Layer**: 90%+ coverage (unit tests with mocking)
+- **Fetchers**: 85%+ coverage (unit tests for parsing logic)
+- **API Validation**: Test PaginationParams and other validation logic
+
+**Not covered by unit tests (tested manually):**
+- API endpoints (use HTTP Client instead)
+- Scheduler execution (use CLI commands instead)
 
 ---
 
 ### Running Tests
 
-**Run all tests:**
+**Run all Rust unit tests:**
 ```bash
 cargo test
 ```
 
-**Run specific test suite:**
+**Run specific test module:**
 ```bash
-cargo test --test api_integration_test
+# Test a specific service
 cargo test reading_service
+
+# Test a specific repository
+cargo test reading_repository
+
+# Test a specific fetcher
+cargo test gauge_list_fetcher
 ```
 
 **Run with coverage:**
@@ -2131,9 +2447,18 @@ cargo test reading_service
 cargo tarpaulin --out Html
 ```
 
-**Run database tests:**
+**Test API endpoints (JetBrains HTTP Client):**
+1. Start server: `cargo run`
+2. Open `http/api-tests.http` in RustRover
+3. Run all tests or individual requests
+
+**Test scheduler jobs (CLI commands):**
 ```bash
-DATABASE_URL=postgres://user:pass@localhost/test_db cargo test
+# Test reading fetch
+cargo run -- fetch-readings
+
+# Test gauge list fetch
+cargo run -- fetch-gauge-list
 ```
 
 ---
@@ -2143,7 +2468,7 @@ DATABASE_URL=postgres://user:pass@localhost/test_db cargo test
 ### Text File Format Challenges
 
 The ev_rain.txt file appears to use **whitespace-delimited columns** which can be tricky because:
-- Gage names and locations contain spaces
+- Gauge names and locations contain spaces
 - Fixed-width columns may not align perfectly
 - "General Location" field is the remainder after other fields
 
@@ -2160,7 +2485,7 @@ fn parse_gauge_line(line: &str) -> Result<GaugeSummary, GaugeListFetchError> {
     }
 
     // Parse each field
-    let gage_name = parts[0].trim();
+    let gauge_name = parts[0].trim();
     let city_town = parts[1].trim();
     let station_id = parts[2].trim();
     let elevation_ft = parts[3].trim().parse::<i32>().ok();
@@ -2171,7 +2496,7 @@ fn parse_gauge_line(line: &str) -> Result<GaugeSummary, GaugeListFetchError> {
 
     Ok(GaugeSummary {
         station_id: station_id.to_string(),
-        gage_name: gage_name.to_string(),
+        gauge_name: gauge_name.to_string(),
         city_town: Some(city_town.to_string()),
         elevation_ft,
         rainfall_past_6h_inches: rainfall_6h,
@@ -2197,7 +2522,7 @@ Skip lines until we find data rows:
 fn is_header_line(line: &str) -> bool {
     line.is_empty()
         || line.contains("Precipitation")
-        || line.contains("Gage Name")
+        || line.contains("Gauge Name")
         || line.contains("---")
 }
 ```
@@ -2340,6 +2665,6 @@ Add structured logging at key points:
 3. **Filtering**: Filter gauges by city, rainfall thresholds, elevation range
 4. **Historical tracking**: Store snapshots of gauge summaries over time
 5. **Alerting**: Notify when gauge list hasn't been updated in X hours
-6. **Search**: Full-text search on gage name, location, city
+6. **Search**: Full-text search on gauge name, location, city
 7. **Geospatial**: Add lat/lon coordinates, enable radius searches
 8. **Dashboard**: Web UI showing all gauges on a map
