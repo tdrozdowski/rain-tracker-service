@@ -8,6 +8,7 @@ use rain_tracker_service::config::Config;
 use rain_tracker_service::db::{ReadingRepository, GaugeRepository};
 use rain_tracker_service::services::ReadingService;
 use rain_tracker_service::fetcher::RainGaugeFetcher;
+use rain_tracker_service::gauge_list_fetcher::GaugeListFetcher;
 use rain_tracker_service::scheduler;
 
 #[tokio::main]
@@ -49,23 +50,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create repositories
     let reading_repo = ReadingRepository::new(pool.clone());
-    let _gauge_repo = GaugeRepository::new(pool.clone());
+    let gauge_repo = GaugeRepository::new(pool.clone());
 
     // Create services
     let reading_service = ReadingService::new(reading_repo.clone());
-    // Note: GaugeService will be used in Phase 2 when we add gauge endpoints
-    // let _gauge_service = GaugeService::new(gauge_repo);
+    // Note: GaugeService will be used in Phase 3 when we add gauge endpoints
+    // let _gauge_service = GaugeService::new(gauge_repo.clone());
 
-    // Create fetcher
-    let fetcher = RainGaugeFetcher::new(config.gauge_url.clone());
+    // Create fetchers
+    let reading_fetcher = RainGaugeFetcher::new(config.gauge_url.clone());
+    let gauge_list_fetcher = GaugeListFetcher::new(config.gauge_list_url.clone());
 
-    // Start background scheduler
-    info!("Starting background fetch scheduler");
+    // Start background schedulers (running concurrently)
+    info!("Starting background fetch schedulers");
+
+    // Scheduler 1: Individual gauge readings (15 min interval)
     let reading_repo_clone = reading_repo.clone();
-    let fetcher_clone = fetcher.clone();
-    let interval = config.fetch_interval_minutes;
+    let reading_fetcher_clone = reading_fetcher.clone();
+    let reading_interval = config.fetch_interval_minutes;
     tokio::spawn(async move {
-        scheduler::start_fetch_scheduler(fetcher_clone, reading_repo_clone, interval).await;
+        scheduler::start_fetch_scheduler(reading_fetcher_clone, reading_repo_clone, reading_interval).await;
+    });
+
+    // Scheduler 2: Gauge list/summaries (60 min interval)
+    let gauge_repo_clone = gauge_repo.clone();
+    let gauge_list_fetcher_clone = gauge_list_fetcher.clone();
+    let gauge_list_interval = config.gauge_list_interval_minutes;
+    tokio::spawn(async move {
+        scheduler::start_gauge_list_scheduler(gauge_list_fetcher_clone, gauge_repo_clone, gauge_list_interval).await;
     });
 
     // Create API router

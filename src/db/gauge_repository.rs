@@ -2,6 +2,7 @@ use sqlx::PgPool;
 use tracing::{debug, instrument};
 
 use crate::db::{DbError, GaugeSummary};
+use crate::gauge_list_fetcher::GaugeSummary as FetchedGauge;
 
 #[derive(Clone)]
 pub struct GaugeRepository {
@@ -13,9 +14,53 @@ impl GaugeRepository {
         Self { pool }
     }
 
-    /// Insert or update gauge summaries (upsert based on station_id)
-    /// Note: This method signature expects a FetchedGauge type that will be created
-    /// in the gauge_list_fetcher module. For now, this is a placeholder.
+    #[instrument(skip(self, summaries), fields(count = summaries.len()))]
+    pub async fn upsert_summaries(&self, summaries: &[FetchedGauge]) -> Result<usize, DbError> {
+        debug!("Beginning transaction to upsert {} gauge summaries", summaries.len());
+        let mut tx = self.pool.begin().await?;
+        let mut upserted = 0;
+
+        for summary in summaries {
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO gauge_summaries (
+                    station_id, gauge_name, city_town, elevation_ft,
+                    general_location, msp_forecast_zone,
+                    rainfall_past_6h_inches, rainfall_past_24h_inches,
+                    last_scraped_at, updated_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+                ON CONFLICT (station_id) DO UPDATE SET
+                    gauge_name = EXCLUDED.gauge_name,
+                    city_town = EXCLUDED.city_town,
+                    elevation_ft = EXCLUDED.elevation_ft,
+                    general_location = EXCLUDED.general_location,
+                    msp_forecast_zone = EXCLUDED.msp_forecast_zone,
+                    rainfall_past_6h_inches = EXCLUDED.rainfall_past_6h_inches,
+                    rainfall_past_24h_inches = EXCLUDED.rainfall_past_24h_inches,
+                    last_scraped_at = NOW(),
+                    updated_at = NOW()
+                "#,
+                summary.station_id,
+                summary.gauge_name,
+                summary.city_town,
+                summary.elevation_ft,
+                summary.general_location,
+                summary.msp_forecast_zone,
+                summary.rainfall_past_6h_inches,
+                summary.rainfall_past_24h_inches
+            )
+            .execute(&mut *tx)
+            .await?;
+
+            upserted += result.rows_affected() as usize;
+        }
+
+        tx.commit().await?;
+        debug!("Successfully upserted {} gauge summaries", upserted);
+        Ok(upserted)
+    }
+
     #[instrument(skip(self))]
     pub async fn count(&self) -> Result<usize, DbError> {
         let count = sqlx::query_scalar!(
