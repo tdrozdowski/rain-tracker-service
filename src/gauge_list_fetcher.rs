@@ -49,6 +49,7 @@ impl GaugeListFetcher {
         let mut gauges = Vec::new();
         let mut parsing_data = false;
         let mut skipped_lines = 0;
+        let mut found_gage_header = false;
 
         for line in text.lines() {
             let trimmed = line.trim();
@@ -58,14 +59,31 @@ impl GaugeListFetcher {
                 continue;
             }
 
-            // Detect header line (contains column labels)
-            if trimmed.contains("Gauge Name") && trimmed.contains("City/Town") {
-                debug!("Found header line, starting data parsing");
+            // Detect first header line (contains "Gage" and "Elev" or "Rainfall")
+            // Note: Source data uses "Gage" (older spelling), not "Gauge"
+            // Headers are split across two lines, so we need to track that
+            if !found_gage_header && trimmed.contains("Gage")
+                && (trimmed.contains("Elev") || trimmed.contains("Rainfall")) {
+                debug!("Found first header line with 'Gage' and other column headers");
+                found_gage_header = true;
+                continue;
+            }
+
+            // Detect second header line (contains "Name" and "ID")
+            if found_gage_header && !parsing_data
+                && trimmed.contains("Name") && trimmed.contains("ID") {
+                debug!("Found second header line, data parsing will start after separator");
+                continue;
+            }
+
+            // Skip separator line (dashes) - after this, data rows begin
+            if found_gage_header && !parsing_data && (trimmed.starts_with("---") || trimmed.contains("------")) {
+                debug!("Skipping separator line, starting data parsing");
                 parsing_data = true;
                 continue;
             }
 
-            // Skip lines before header
+            // Skip lines before we've found headers and separator
             if !parsing_data {
                 continue;
             }
@@ -226,18 +244,24 @@ mod tests {
     #[test]
     fn test_parse_text_with_headers() {
         let text = r#"
-Precipitation Gauge Report
-Date: 10/15/25 0818
+Multi-Interval Precipitation Totals
 
-Gauge Name              City/Town       ID      Elev   6hr    24hr   Zone   Location
-4th of July Wash        Agua Caliente   41200   1120   0.00   0.00   None   21 mi. W of Old US80 on Agua Caliente Road
-Columbus Wash           Agua Caliente   40800    705   0.00   0.00   None   8 mi. N of Agua Caliente
+                         FLOOD CONTROL DISTRICT of MARICOPA COUNTY
+                     Precipitation Report for ALL FCDMC Rain Stations
+                       6 and 24 Hours Ending 10/16/25 at 2248
+            *** Data is Preliminary and Unedited, ---- Denotes Missing Data ***
+
+     Gage                          In or Nearest      Gage    Elev.  Rainfall    Rainfall      MSP Forecast       General
+     Name                           City / Town        ID     (ft)   Past 6 hr  Past 24 hr         Zone           Location
+--------------------------------   ---------------   ------  ------  ---------  ----------  ------------------   --------------------------------------------
+4th of July Wash                   Agua Caliente      41200   1120      0.00       0.00     None                  21 mi. W of Old US80 on Agua Caliente Road
+Columbus Wash                      Agua Caliente      40800    705      0.00       0.00     None                  8 mi. N of Agua Caliente
         "#;
 
         let fetcher = GaugeListFetcher::new("".to_string());
         let result = fetcher.parse_text(text);
 
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
         let gauges = result.unwrap();
         assert_eq!(gauges.len(), 2);
         assert_eq!(gauges[0].station_id, "41200");
@@ -250,7 +274,9 @@ Columbus Wash           Agua Caliente   40800    705   0.00   0.00   None   8 mi
 Precipitation Gauge Report
 Date: 10/15/25 0818
 
-Gauge Name              City/Town       ID      Elev   6hr    24hr   Zone   Location
+     Gage                          In or Nearest      Gage    Elev.  Rainfall    Rainfall      MSP Forecast       General
+     Name                           City / Town        ID     (ft)   Past 6 hr  Past 24 hr         Zone           Location
+--------------------------------   ---------------   ------  ------  ---------  ----------  ------------------   --------------------------------------------
 Test Gauge One          Phoenix         12345   1000   1.00   2.00   AZ001  North Phoenix
         "#;
 

@@ -6,7 +6,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 use rain_tracker_service::api::{create_router, AppState};
 use rain_tracker_service::config::Config;
 use rain_tracker_service::db::{ReadingRepository, GaugeRepository};
-use rain_tracker_service::services::ReadingService;
+use rain_tracker_service::services::{ReadingService, GaugeService};
 use rain_tracker_service::fetcher::RainGaugeFetcher;
 use rain_tracker_service::gauge_list_fetcher::GaugeListFetcher;
 use rain_tracker_service::scheduler;
@@ -54,8 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create services
     let reading_service = ReadingService::new(reading_repo.clone());
-    // Note: GaugeService will be used in Phase 3 when we add gauge endpoints
-    // let _gauge_service = GaugeService::new(gauge_repo.clone());
+    let gauge_service = GaugeService::new(gauge_repo.clone());
 
     // Create fetchers
     let reading_fetcher = RainGaugeFetcher::new(config.gauge_url.clone());
@@ -81,7 +80,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Create API router
-    let app_state = AppState { reading_service };
+    let app_state = AppState {
+        reading_service,
+        gauge_service,
+    };
     let app = create_router(app_state).layer(TraceLayer::new_for_http());
 
     // Start server
