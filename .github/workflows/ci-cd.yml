@@ -148,7 +148,7 @@ jobs:
       - name: Test API endpoints with ijhttp
         run: |
           curl -f -L -o ijhttp.zip "https://jb.gg/ijhttp/latest"
-          unzip -q ijhttp.zip -d /tmp/ijhttp
+          unzip -q ijhttp.zip -d /tmp
           chmod +x /tmp/ijhttp/ijhttp
           /tmp/ijhttp/ijhttp -e ci http/api-tests.http
 
