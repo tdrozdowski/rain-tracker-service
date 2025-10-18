@@ -119,7 +119,7 @@ impl ReadingService {
             let month = reading.reading_datetime.month();
             monthly_data
                 .entry(month)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(reading);
         }
 
