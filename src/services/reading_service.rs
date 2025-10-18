@@ -117,10 +117,7 @@ impl ReadingService {
         let mut monthly_data: HashMap<u32, Vec<&Reading>> = HashMap::new();
         for reading in readings {
             let month = reading.reading_datetime.month();
-            monthly_data
-                .entry(month)
-                .or_default()
-                .push(reading);
+            monthly_data.entry(month).or_default().push(reading);
         }
 
         // Find the last reading in September (end of previous water year) to get baseline for Oct-Dec
