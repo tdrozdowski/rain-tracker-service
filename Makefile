@@ -1,4 +1,4 @@
-.PHONY: help check fmt clippy test ci-check clean
+.PHONY: help check fmt fmt-fix clippy test ci-check clean
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -9,8 +9,11 @@ help: ## Show this help message
 check: ## Run cargo check
 	cargo check
 
-fmt: ## Check code formatting
+fmt: ## Check code formatting (same as CI)
 	cargo fmt -- --check
+
+fmt-fix: ## Auto-fix code formatting issues
+	cargo fmt
 
 clippy: ## Run clippy with warnings as errors (exactly as CI does)
 	cargo clippy --all-targets -- -D warnings
