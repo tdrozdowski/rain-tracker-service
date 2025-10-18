@@ -48,10 +48,20 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_TEST }}
+        run: cargo sqlx migrate run
+
       - name: Check formatting
         run: cargo fmt -- --check
 
       - name: Run clippy
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_TEST }}
         run: cargo clippy -- -D warnings
 
       - name: Build
@@ -95,7 +105,17 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: cargo sqlx migrate run
+
       - name: Build application
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
         run: cargo build --release
 
       - name: Start application
@@ -175,6 +195,8 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Install sqlx-cli
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
         run: cargo install sqlx-cli --no-default-features --features postgres
 
       - name: Prepare SQLx offline mode
