@@ -145,14 +145,11 @@ jobs:
           echo "Server failed to start"
           exit 1
 
-      - name: Install ijhttp
-        run: |
-          wget https://github.com/JetBrains/http-request-in-editor-spec/releases/download/2024.3.1/ijhttp-2024.3.1.zip
-          unzip ijhttp-2024.3.1.zip -d /tmp/ijhttp
-          chmod +x /tmp/ijhttp/ijhttp
-
       - name: Test API endpoints with ijhttp
         run: |
+          curl -f -L -o ijhttp.zip "https://jb.gg/ijhttp/latest"
+          unzip -q ijhttp.zip -d /tmp/ijhttp
+          chmod +x /tmp/ijhttp/ijhttp
           /tmp/ijhttp/ijhttp -e ci http/api-tests.http
 
       - name: Stop application
