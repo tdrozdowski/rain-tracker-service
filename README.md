@@ -82,18 +82,6 @@ make docker-down
 
 The service will be available at `http://localhost:8080`
 
-### Available Make Commands
-```bash
-make help         # Show all available commands
-make setup        # Setup database and SQLx offline mode
-make build        # Build the project
-make run          # Run locally
-make test         # Run tests
-make docker-up    # Start with docker-compose
-make docker-down  # Stop docker-compose
-make docker-logs  # View logs
-```
-
 ## Running Locally
 
 ### Prerequisites
@@ -198,9 +186,9 @@ Edit `k8s/secret.yaml` with your actual database URL before deploying.
 ### Manual Testing Checklist
 - [ ] Deploy to K8s cluster
 - [ ] Verify database migrations succeed
-- [ ] Test `/api/v1/health` endpoint returns 200
-- [ ] Test `/api/v1/readings/water-year/2025` returns valid data
-- [ ] Test `/api/v1/readings/calendar-year/2025` returns valid data
+- [x] Test `/api/v1/health` endpoint returns 200
+- [x] Test `/api/v1/readings/water-year/2025` returns valid data
+- [x] Test `/api/v1/readings/calendar-year/2025` returns valid data
 - [ ] Verify scheduler fetches data at configured interval
 - [ ] Check logs for errors
 - [ ] Verify data deduplication works (no duplicate readings)

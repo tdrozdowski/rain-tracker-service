@@ -15,7 +15,8 @@
 *~
 
 # k8s
-*secret.yaml
+*secrets.yaml
+!sealed-secrets.yaml
 
 # OS
 .DS_Store

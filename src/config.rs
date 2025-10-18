@@ -7,6 +7,8 @@ pub struct Config {
     pub server_port: u16,
     pub gauge_url: String,
     pub fetch_interval_minutes: u64,
+    pub gauge_list_url: String,
+    pub gauge_list_interval_minutes: u64,
 }
 
 impl Config {
@@ -23,6 +25,11 @@ impl Config {
                 .unwrap_or_else(|_| "15".to_string())
                 .parse()
                 .unwrap_or(15),
+            gauge_list_url: env::var("GAUGE_LIST_URL")?,
+            gauge_list_interval_minutes: env::var("GAUGE_LIST_INTERVAL_MINUTES")
+                .unwrap_or_else(|_| "60".to_string())
+                .parse()
+                .unwrap_or(60),
         })
     }
 

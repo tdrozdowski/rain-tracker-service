@@ -164,6 +164,135 @@ GET {{baseUrl}}/api/v1/readings/calendar-year/1900
 
 ###
 
+### Get All Gauges - Default Pagination
+GET {{baseUrl}}/api/v1/gauges
+
+> {%
+    client.test("Gauges list returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Gauges list has correct structure", function() {
+        client.assert(response.body.hasOwnProperty("total_gauges"), "Response doesn't have total_gauges field");
+        client.assert(response.body.hasOwnProperty("page"), "Response doesn't have page field");
+        client.assert(response.body.hasOwnProperty("page_size"), "Response doesn't have page_size field");
+        client.assert(response.body.hasOwnProperty("total_pages"), "Response doesn't have total_pages field");
+        client.assert(response.body.hasOwnProperty("has_next_page"), "Response doesn't have has_next_page field");
+        client.assert(response.body.hasOwnProperty("has_prev_page"), "Response doesn't have has_prev_page field");
+        client.assert(response.body.hasOwnProperty("last_scraped_at"), "Response doesn't have last_scraped_at field");
+        client.assert(response.body.hasOwnProperty("gauges"), "Response doesn't have gauges field");
+        client.assert(Array.isArray(response.body.gauges), "Gauges is not an array");
+    });
+
+    client.test("Default pagination values are correct", function() {
+        client.assert(response.body.page === 1, "Default page is not 1");
+        client.assert(response.body.page_size === 50, "Default page_size is not 50");
+        client.assert(response.body.has_prev_page === false, "First page should not have previous page");
+    });
+
+    client.test("Gauge items have correct structure", function() {
+        if (response.body.gauges.length > 0) {
+            const gauge = response.body.gauges[0];
+            client.assert(gauge.hasOwnProperty("id"), "Gauge doesn't have id field");
+            client.assert(gauge.hasOwnProperty("station_id"), "Gauge doesn't have station_id field");
+            client.assert(gauge.hasOwnProperty("gauge_name"), "Gauge doesn't have gauge_name field");
+            client.assert(gauge.hasOwnProperty("city_town"), "Gauge doesn't have city_town field");
+            client.assert(gauge.hasOwnProperty("elevation_ft"), "Gauge doesn't have elevation_ft field");
+            client.assert(gauge.hasOwnProperty("general_location"), "Gauge doesn't have general_location field");
+            client.assert(gauge.hasOwnProperty("msp_forecast_zone"), "Gauge doesn't have msp_forecast_zone field");
+            client.assert(gauge.hasOwnProperty("rainfall_past_6h_inches"), "Gauge doesn't have rainfall_past_6h_inches field");
+            client.assert(gauge.hasOwnProperty("rainfall_past_24h_inches"), "Gauge doesn't have rainfall_past_24h_inches field");
+            client.assert(gauge.hasOwnProperty("last_scraped_at"), "Gauge doesn't have last_scraped_at field");
+            client.assert(gauge.hasOwnProperty("created_at"), "Gauge doesn't have created_at field");
+            client.assert(gauge.hasOwnProperty("updated_at"), "Gauge doesn't have updated_at field");
+        }
+    });
+%}
+
+###
+
+### Get All Gauges - Custom Pagination (Page 1, 10 items)
+GET {{baseUrl}}/api/v1/gauges?page=1&page_size=10
+
+> {%
+    client.test("Custom pagination returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Custom pagination values are correct", function() {
+        client.assert(response.body.page === 1, "Page is not 1");
+        client.assert(response.body.page_size === 10, "Page size is not 10");
+        client.assert(response.body.gauges.length <= 10, "Gauges array has more than 10 items");
+    });
+
+    client.test("Pagination metadata is correct", function() {
+        if (response.body.total_gauges > 10) {
+            client.assert(response.body.has_next_page === true, "Should have next page when total > page_size");
+            client.assert(response.body.total_pages > 1, "Should have more than 1 page");
+        }
+        client.assert(response.body.has_prev_page === false, "First page should not have previous page");
+    });
+%}
+
+###
+
+### Get All Gauges - Page 2
+GET {{baseUrl}}/api/v1/gauges?page=2&page_size=25
+
+> {%
+    client.test("Page 2 returns 200", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+
+    client.test("Page 2 metadata is correct", function() {
+        client.assert(response.body.page === 2, "Page is not 2");
+        client.assert(response.body.page_size === 25, "Page size is not 25");
+        if (response.body.total_gauges > 25) {
+            client.assert(response.body.has_prev_page === true, "Page 2 should have previous page");
+        }
+    });
+%}
+
+###
+
+### Get Gauge by Station ID - Valid ID
+GET {{baseUrl}}/api/v1/gauges/59700
+
+> {%
+    client.test("Gauge by ID returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Response status is not 200 or 404");
+    });
+
+    client.test("Gauge by ID has correct structure (if found)", function() {
+        if (response.status === 200) {
+            client.assert(response.body.hasOwnProperty("id"), "Gauge doesn't have id field");
+            client.assert(response.body.hasOwnProperty("station_id"), "Gauge doesn't have station_id field");
+            client.assert(response.body.hasOwnProperty("gauge_name"), "Gauge doesn't have gauge_name field");
+            client.assert(response.body.hasOwnProperty("city_town"), "Gauge doesn't have city_town field");
+            client.assert(response.body.hasOwnProperty("elevation_ft"), "Gauge doesn't have elevation_ft field");
+            client.assert(response.body.hasOwnProperty("general_location"), "Gauge doesn't have general_location field");
+            client.assert(response.body.hasOwnProperty("msp_forecast_zone"), "Gauge doesn't have msp_forecast_zone field");
+            client.assert(response.body.hasOwnProperty("rainfall_past_6h_inches"), "Gauge doesn't have rainfall_past_6h_inches field");
+            client.assert(response.body.hasOwnProperty("rainfall_past_24h_inches"), "Gauge doesn't have rainfall_past_24h_inches field");
+            client.assert(response.body.hasOwnProperty("last_scraped_at"), "Gauge doesn't have last_scraped_at field");
+            client.assert(response.body.station_id === "59700", "Station ID doesn't match requested ID");
+        }
+    });
+%}
+
+###
+
+### Get Gauge by Station ID - Invalid ID (should return 404)
+GET {{baseUrl}}/api/v1/gauges/99999
+
+> {%
+    client.test("Invalid gauge ID returns 404", function() {
+        client.assert(response.status === 404, "Response status is not 404");
+    });
+%}
+
+###
+
 GET https://alert.fcd.maricopa.gov/php/showdata4.php?ID=59700&NM=1000
 
 ###

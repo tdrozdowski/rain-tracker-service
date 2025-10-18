@@ -3,23 +3,13 @@ use scraper::{Html, Selector};
 use serde::Deserialize;
 use tracing::{debug, error, instrument, warn};
 
+use crate::fetch_error::FetchError;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RainReading {
     pub reading_datetime: DateTime<Utc>,
     pub cumulative_inches: f64,
     pub incremental_inches: f64,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum FetchError {
-    #[error("HTTP request failed: {0}")]
-    Request(#[from] reqwest::Error),
-    #[error("Failed to parse HTML")]
-    ParseError,
-    #[error("Failed to parse date/time: {0}")]
-    DateTimeError(String),
-    #[error("Failed to parse number: {0}")]
-    NumberError(String),
 }
 
 #[derive(Clone)]
