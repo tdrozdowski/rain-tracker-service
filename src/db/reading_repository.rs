@@ -18,7 +18,10 @@ impl ReadingRepository {
     /// Insert multiple readings in a transaction
     #[instrument(skip(self, readings), fields(count = readings.len()))]
     pub async fn insert_readings(&self, readings: &[RainReading]) -> Result<usize, DbError> {
-        debug!("Beginning transaction to insert {} readings", readings.len());
+        debug!(
+            "Beginning transaction to insert {} readings",
+            readings.len()
+        );
         let mut tx = self.pool.begin().await?;
         let mut inserted = 0;
         let mut duplicates = 0;
@@ -45,7 +48,10 @@ impl ReadingRepository {
         }
 
         tx.commit().await?;
-        info!("Inserted {} new readings, {} duplicates skipped", inserted, duplicates);
+        info!(
+            "Inserted {} new readings, {} duplicates skipped",
+            inserted, duplicates
+        );
         Ok(inserted)
     }
 

@@ -5,11 +5,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 use rain_tracker_service::api::{create_router, AppState};
 use rain_tracker_service::config::Config;
-use rain_tracker_service::db::{ReadingRepository, GaugeRepository};
-use rain_tracker_service::services::{ReadingService, GaugeService};
+use rain_tracker_service::db::{GaugeRepository, ReadingRepository};
 use rain_tracker_service::fetcher::RainGaugeFetcher;
 use rain_tracker_service::gauge_list_fetcher::GaugeListFetcher;
 use rain_tracker_service::scheduler;
+use rain_tracker_service::services::{GaugeService, ReadingService};
 
 #[tokio::main]
 #[instrument]
@@ -18,13 +18,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
         .with(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,rain_tracker_service=debug"))
+                .unwrap_or_else(|_| EnvFilter::new("info,rain_tracker_service=debug")),
         )
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true)
                 .with_thread_ids(true)
-                .with_line_number(true)
+                .with_line_number(true),
         )
         .init();
 
@@ -68,7 +68,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reading_fetcher_clone = reading_fetcher.clone();
     let reading_interval = config.fetch_interval_minutes;
     tokio::spawn(async move {
-        scheduler::start_fetch_scheduler(reading_fetcher_clone, reading_repo_clone, reading_interval).await;
+        scheduler::start_fetch_scheduler(
+            reading_fetcher_clone,
+            reading_repo_clone,
+            reading_interval,
+        )
+        .await;
     });
 
     // Scheduler 2: Gauge list/summaries (60 min interval)
@@ -76,7 +81,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gauge_list_fetcher_clone = gauge_list_fetcher.clone();
     let gauge_list_interval = config.gauge_list_interval_minutes;
     tokio::spawn(async move {
-        scheduler::start_gauge_list_scheduler(gauge_list_fetcher_clone, gauge_repo_clone, gauge_list_interval).await;
+        scheduler::start_gauge_list_scheduler(
+            gauge_list_fetcher_clone,
+            gauge_repo_clone,
+            gauge_list_interval,
+        )
+        .await;
     });
 
     // Create API router

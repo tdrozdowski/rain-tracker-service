@@ -1,13 +1,14 @@
 use chrono::{Datelike, Utc};
 use rain_tracker_service::db::ReadingRepository;
-use rain_tracker_service::services::{ReadingService};
 use rain_tracker_service::fetcher::RainReading;
+use rain_tracker_service::services::ReadingService;
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::test]
 async fn test_insert_and_retrieve_readings() {
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string());
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
+    });
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -49,8 +50,9 @@ async fn test_insert_and_retrieve_readings() {
 
 #[tokio::test]
 async fn test_water_year_queries() {
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string());
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
+    });
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -69,7 +71,10 @@ async fn test_water_year_queries() {
 
     // Query for current rain year
     let current_water_year = ReadingService::get_water_year(Utc::now());
-    let summary = reading_service.get_water_year_summary(current_water_year).await.unwrap();
+    let summary = reading_service
+        .get_water_year_summary(current_water_year)
+        .await
+        .unwrap();
 
     // Should return some readings (assuming we've inserted some)
     assert!(summary.readings.len() >= 0);
@@ -77,8 +82,9 @@ async fn test_water_year_queries() {
 
 #[tokio::test]
 async fn test_calendar_year_queries() {
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string());
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
+    });
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -97,7 +103,10 @@ async fn test_calendar_year_queries() {
 
     // Query for current calendar year
     let current_year = Utc::now().year();
-    let summary = reading_service.get_calendar_year_summary(current_year).await.unwrap();
+    let summary = reading_service
+        .get_calendar_year_summary(current_year)
+        .await
+        .unwrap();
 
     // Should return some readings (assuming we've inserted some)
     assert!(summary.readings.len() >= 0);

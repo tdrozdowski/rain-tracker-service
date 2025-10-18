@@ -2,15 +2,15 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json, Router,
     routing::get,
+    Json, Router,
 };
 use serde::Serialize;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::db::Reading;
-use crate::services::{ReadingService, GaugeService};
 use crate::services::gauge_service::PaginationParams;
+use crate::services::{GaugeService, ReadingService};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -42,7 +42,10 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
     debug!("Health check requested");
     match state.reading_service.get_latest_reading().await {
         Ok(latest) => {
-            info!("Health check successful, latest reading present: {}", latest.is_some());
+            info!(
+                "Health check successful, latest reading present: {}",
+                latest.is_some()
+            );
             let response = HealthResponse {
                 status: "healthy".to_string(),
                 latest_reading: latest,
@@ -77,9 +80,7 @@ async fn get_water_year(
 
     info!(
         "Retrieved {} readings for rain year {}, total rainfall: {:.2} inches",
-        summary.total_readings,
-        year,
-        summary.total_rainfall_inches
+        summary.total_readings, year, summary.total_rainfall_inches
     );
 
     Ok(Json(summary))
@@ -102,9 +103,7 @@ async fn get_calendar_year(
 
     info!(
         "Retrieved {} readings for calendar year {}, YTD rainfall: {:.2} inches",
-        summary.total_readings,
-        year,
-        summary.year_to_date_rainfall_inches
+        summary.total_readings, year, summary.year_to_date_rainfall_inches
     );
 
     Ok(Json(summary))
@@ -126,10 +125,7 @@ async fn get_latest(State(state): State<AppState>) -> Result<Json<Reading>, Stat
             StatusCode::NOT_FOUND
         })?;
 
-    info!(
-        "Retrieved latest reading from {}",
-        reading.reading_datetime
-    );
+    info!("Retrieved latest reading from {}", reading.reading_datetime);
 
     Ok(Json(reading))
 }
@@ -139,9 +135,13 @@ async fn get_all_gauges(
     State(state): State<AppState>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<crate::services::gauge_service::GaugeListResponse>, StatusCode> {
-    debug!("Fetching gauge summaries (page={}, page_size={})", params.page, params.page_size);
+    debug!(
+        "Fetching gauge summaries (page={}, page_size={})",
+        params.page, params.page_size
+    );
 
-    let response = state.gauge_service
+    let response = state
+        .gauge_service
         .get_gauges_paginated(&params)
         .await
         .map_err(|e| {
@@ -151,7 +151,10 @@ async fn get_all_gauges(
 
     info!(
         "Retrieved {} gauge summaries (page {}/{}, total={})",
-        response.gauges.len(), response.page, response.total_pages, response.total_gauges
+        response.gauges.len(),
+        response.page,
+        response.total_pages,
+        response.total_gauges
     );
 
     Ok(Json(response))
@@ -164,7 +167,8 @@ async fn get_gauge_by_id(
 ) -> Result<Json<crate::db::GaugeSummary>, StatusCode> {
     debug!("Fetching gauge summary for station {}", station_id);
 
-    let gauge = state.gauge_service
+    let gauge = state
+        .gauge_service
         .get_gauge_by_id(&station_id)
         .await
         .map_err(|e| {

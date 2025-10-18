@@ -16,7 +16,10 @@ impl GaugeRepository {
 
     #[instrument(skip(self, summaries), fields(count = summaries.len()))]
     pub async fn upsert_summaries(&self, summaries: &[FetchedGauge]) -> Result<usize, DbError> {
-        debug!("Beginning transaction to upsert {} gauge summaries", summaries.len());
+        debug!(
+            "Beginning transaction to upsert {} gauge summaries",
+            summaries.len()
+        );
         let mut tx = self.pool.begin().await?;
         let mut upserted = 0;
 
@@ -63,11 +66,9 @@ impl GaugeRepository {
 
     #[instrument(skip(self))]
     pub async fn count(&self) -> Result<usize, DbError> {
-        let count = sqlx::query_scalar!(
-            "SELECT COUNT(*) FROM gauge_summaries"
-        )
-        .fetch_one(&self.pool)
-        .await?;
+        let count = sqlx::query_scalar!("SELECT COUNT(*) FROM gauge_summaries")
+            .fetch_one(&self.pool)
+            .await?;
 
         Ok(count.unwrap_or(0) as usize)
     }
@@ -76,7 +77,7 @@ impl GaugeRepository {
     pub async fn find_paginated(
         &self,
         offset: i64,
-        limit: i64
+        limit: i64,
     ) -> Result<Vec<GaugeSummary>, DbError> {
         debug!("Querying gauges with offset={}, limit={}", offset, limit);
 

@@ -1,7 +1,9 @@
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use std::collections::HashMap;
 
-use crate::db::{DbError, Reading, ReadingRepository, WaterYearSummary, CalendarYearSummary, MonthlySummary};
+use crate::db::{
+    CalendarYearSummary, DbError, MonthlySummary, Reading, ReadingRepository, WaterYearSummary,
+};
 
 #[derive(Clone)]
 pub struct ReadingService {
@@ -14,7 +16,10 @@ impl ReadingService {
     }
 
     /// Get water year summary with business logic
-    pub async fn get_water_year_summary(&self, water_year: i32) -> Result<WaterYearSummary, DbError> {
+    pub async fn get_water_year_summary(
+        &self,
+        water_year: i32,
+    ) -> Result<WaterYearSummary, DbError> {
         // Calculate date range (business logic)
         let (start, end) = Self::water_year_date_range(water_year);
 
@@ -33,7 +38,10 @@ impl ReadingService {
     }
 
     /// Get calendar year summary with monthly breakdowns
-    pub async fn get_calendar_year_summary(&self, year: i32) -> Result<CalendarYearSummary, DbError> {
+    pub async fn get_calendar_year_summary(
+        &self,
+        year: i32,
+    ) -> Result<CalendarYearSummary, DbError> {
         // Calculate date range (business logic)
         let (start, end) = Self::calendar_year_date_range(year);
 
@@ -109,13 +117,17 @@ impl ReadingService {
         let mut monthly_data: HashMap<u32, Vec<&Reading>> = HashMap::new();
         for reading in readings {
             let month = reading.reading_datetime.month();
-            monthly_data.entry(month).or_insert_with(Vec::new).push(reading);
+            monthly_data
+                .entry(month)
+                .or_insert_with(Vec::new)
+                .push(reading);
         }
 
         // Find the last reading in September (end of previous water year) to get baseline for Oct-Dec
         let sept_final_cumulative = if let Some(sept_readings) = monthly_data.get(&9) {
             // Get the latest reading in September
-            sept_readings.iter()
+            sept_readings
+                .iter()
                 .max_by_key(|r| r.reading_datetime)
                 .map(|r| r.cumulative_inches)
                 .unwrap_or(0.0)
@@ -125,8 +137,8 @@ impl ReadingService {
 
         // Calculate monthly summaries with cumulative values
         let mut summaries = Vec::new();
-        let mut cumulative_jan_sept = 0.0;  // Accumulator for Jan-Sept (water year portion in calendar year)
-        let mut cumulative_oct_dec = 0.0;   // Accumulator for Oct-Dec (new water year)
+        let mut cumulative_jan_sept = 0.0; // Accumulator for Jan-Sept (water year portion in calendar year)
+        let mut cumulative_oct_dec = 0.0; // Accumulator for Oct-Dec (new water year)
 
         for month in 1..=12 {
             if let Some(month_readings) = monthly_data.get(&month) {

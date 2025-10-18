@@ -1,4 +1,4 @@
-use crate::db::{DbError, GaugeSummary, GaugeRepository};
+use crate::db::{DbError, GaugeRepository, GaugeSummary};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
@@ -58,7 +58,8 @@ impl GaugeService {
     ) -> Result<GaugeListResponse, DbError> {
         // Get data from repository
         let total_gauges = self.gauge_repo.count().await?;
-        let gauges = self.gauge_repo
+        let gauges = self
+            .gauge_repo
             .find_paginated(params.offset(), params.limit())
             .await?;
 
@@ -67,9 +68,7 @@ impl GaugeService {
         let has_next_page = params.page < total_pages;
         let has_prev_page = params.page > 1;
 
-        let last_scraped_at = gauges.iter()
-            .map(|g| g.last_scraped_at)
-            .max();
+        let last_scraped_at = gauges.iter().map(|g| g.last_scraped_at).max();
 
         Ok(GaugeListResponse {
             total_gauges,

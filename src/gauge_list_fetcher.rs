@@ -62,22 +62,30 @@ impl GaugeListFetcher {
             // Detect first header line (contains "Gage" and "Elev" or "Rainfall")
             // Note: Source data uses "Gage" (older spelling), not "Gauge"
             // Headers are split across two lines, so we need to track that
-            if !found_gage_header && trimmed.contains("Gage")
-                && (trimmed.contains("Elev") || trimmed.contains("Rainfall")) {
+            if !found_gage_header
+                && trimmed.contains("Gage")
+                && (trimmed.contains("Elev") || trimmed.contains("Rainfall"))
+            {
                 debug!("Found first header line with 'Gage' and other column headers");
                 found_gage_header = true;
                 continue;
             }
 
             // Detect second header line (contains "Name" and "ID")
-            if found_gage_header && !parsing_data
-                && trimmed.contains("Name") && trimmed.contains("ID") {
+            if found_gage_header
+                && !parsing_data
+                && trimmed.contains("Name")
+                && trimmed.contains("ID")
+            {
                 debug!("Found second header line, data parsing will start after separator");
                 continue;
             }
 
             // Skip separator line (dashes) - after this, data rows begin
-            if found_gage_header && !parsing_data && (trimmed.starts_with("---") || trimmed.contains("------")) {
+            if found_gage_header
+                && !parsing_data
+                && (trimmed.starts_with("---") || trimmed.contains("------"))
+            {
                 debug!("Skipping separator line, starting data parsing");
                 parsing_data = true;
                 continue;

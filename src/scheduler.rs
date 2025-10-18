@@ -14,7 +14,10 @@ pub async fn start_fetch_scheduler(
 ) {
     let mut interval = time::interval(Duration::from_secs(interval_minutes * 60));
 
-    info!("Fetch scheduler started with {} minute interval", interval_minutes);
+    info!(
+        "Fetch scheduler started with {} minute interval",
+        interval_minutes
+    );
 
     loop {
         interval.tick().await;
@@ -61,7 +64,10 @@ pub async fn start_gauge_list_scheduler(
 ) {
     let mut interval = time::interval(Duration::from_secs(interval_minutes * 60));
 
-    info!("Gauge list scheduler started with {} minute interval", interval_minutes);
+    info!(
+        "Gauge list scheduler started with {} minute interval",
+        interval_minutes
+    );
 
     loop {
         interval.tick().await;

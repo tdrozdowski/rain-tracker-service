@@ -53,7 +53,10 @@ impl RainGaugeFetcher {
             })
             .ok_or_else(|| {
                 error!("No PRE element with data table found in HTML");
-                debug!("HTML preview (first 500 chars): {}", &html.chars().take(500).collect::<String>());
+                debug!(
+                    "HTML preview (first 500 chars): {}",
+                    &html.chars().take(500).collect::<String>()
+                );
                 FetchError::ParseError
             })?;
 
@@ -69,7 +72,10 @@ impl RainGaugeFetcher {
             let trimmed = line.trim();
 
             // Skip empty lines and header lines
-            if trimmed.is_empty() || trimmed.starts_with("Precipitation") || trimmed.starts_with("Date") {
+            if trimmed.is_empty()
+                || trimmed.starts_with("Precipitation")
+                || trimmed.starts_with("Date")
+            {
                 continue;
             }
 
@@ -106,14 +112,26 @@ impl RainGaugeFetcher {
                     }
                 }
             } else {
-                debug!("Row {} has insufficient parts ({}), skipping: {}", row_count, parts.len(), trimmed);
+                debug!(
+                    "Row {} has insufficient parts ({}), skipping: {}",
+                    row_count,
+                    parts.len(),
+                    trimmed
+                );
             }
         }
 
         if skipped_rows > 0 {
-            warn!("Skipped {} unparseable rows out of {}", skipped_rows, row_count);
+            warn!(
+                "Skipped {} unparseable rows out of {}",
+                skipped_rows, row_count
+            );
         }
-        debug!("Successfully parsed {} readings from {} rows", readings.len(), row_count);
+        debug!(
+            "Successfully parsed {} readings from {} rows",
+            readings.len(),
+            row_count
+        );
 
         Ok(readings)
     }
@@ -241,7 +259,11 @@ Date       Time      inches   inches
 
         let readings = result.unwrap();
         // The sample file has 200 data rows
-        assert!(readings.len() > 100, "Expected many readings, got {}", readings.len());
+        assert!(
+            readings.len() > 100,
+            "Expected many readings, got {}",
+            readings.len()
+        );
 
         // Verify first reading
         assert_eq!(readings[0].cumulative_inches, 1.85);
@@ -249,6 +271,9 @@ Date       Time      inches   inches
 
         // Verify some parsing accuracy
         let reading_with_increment = readings.iter().find(|r| r.incremental_inches == 0.04);
-        assert!(reading_with_increment.is_some(), "Should have readings with 0.04 incremental");
+        assert!(
+            reading_with_increment.is_some(),
+            "Should have readings with 0.04 incremental"
+        );
     }
 }
