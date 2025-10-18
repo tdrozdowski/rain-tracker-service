@@ -1,3 +1,4 @@
+use axum::response::Html;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -7,6 +8,7 @@ use axum::{
 };
 use serde::Serialize;
 use tracing::{debug, error, info, instrument, warn};
+use utoipa::{OpenApi, ToSchema};
 
 use crate::db::Reading;
 use crate::services::gauge_service::PaginationParams;
@@ -18,7 +20,7 @@ pub struct AppState {
     pub gauge_service: GaugeService,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct HealthResponse {
     pub status: String,
 }
@@ -39,9 +41,93 @@ pub fn create_router(state: AppState) -> Router {
         .route("/gauges/{station_id}", get(get_gauge_by_id))
         .with_state(state);
 
-    Router::new().nest("/api/v1", api_routes)
+    Router::new()
+        .nest("/api/v1", api_routes)
+        .route("/api-docs/openapi.json", get(openapi_spec))
+        .route("/docs", get(redoc_ui))
 }
 
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        health,
+        get_water_year,
+        get_calendar_year,
+        get_latest,
+        get_all_gauges,
+        get_gauge_by_id,
+    ),
+    components(
+        schemas(
+            HealthResponse,
+            Reading,
+            WaterYearSummary,
+            CalendarYearSummary,
+            MonthlySummary,
+            GaugeSummary,
+            GaugeListResponse,
+        )
+    ),
+    tags(
+        (name = "health", description = "Health check endpoints"),
+        (name = "readings", description = "Rain gauge reading endpoints"),
+        (name = "gauges", description = "Gauge information endpoints")
+    ),
+    info(
+        title = "Rain Tracker Service API",
+        version = "0.3.0",
+        description = "API for querying rain gauge readings and gauge information from the Maricopa County Flood Control District",
+        contact(
+            name = "Rain Tracker Service"
+        )
+    )
+)]
+struct ApiDoc;
+
+use crate::db::{CalendarYearSummary, GaugeSummary, MonthlySummary, WaterYearSummary};
+use crate::services::gauge_service::GaugeListResponse;
+
+/// Generate the OpenAPI specification
+pub fn generate_openapi_spec() -> utoipa::openapi::OpenApi {
+    ApiDoc::openapi()
+}
+
+async fn openapi_spec() -> Json<utoipa::openapi::OpenApi> {
+    Json(generate_openapi_spec())
+}
+
+async fn redoc_ui() -> Html<&'static str> {
+    Html(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Rain Tracker API Documentation</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+</head>
+<body>
+    <redoc spec-url='/api-docs/openapi.json'></redoc>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"> </script>
+</body>
+</html>"#,
+    )
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/health",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service is healthy", body = HealthResponse)
+    )
+)]
 #[instrument(skip(_state))]
 async fn health(State(_state): State<AppState>) -> impl IntoResponse {
     debug!("Health check requested");
@@ -52,6 +138,19 @@ async fn health(State(_state): State<AppState>) -> impl IntoResponse {
     (StatusCode::OK, Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/readings/{station_id}/water-year/{year}",
+    tag = "readings",
+    params(
+        ("station_id" = String, Path, description = "Rain gauge station ID"),
+        ("year" = i32, Path, description = "Water year (Oct 1 of year-1 through Sep 30 of year)")
+    ),
+    responses(
+        (status = 200, description = "Water year summary retrieved successfully", body = WaterYearSummary),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[instrument(skip(state), fields(station_id = %station_id, year = %year))]
 async fn get_water_year(
     State(state): State<AppState>,
@@ -81,6 +180,19 @@ async fn get_water_year(
     Ok(Json(summary))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/readings/{station_id}/calendar-year/{year}",
+    tag = "readings",
+    params(
+        ("station_id" = String, Path, description = "Rain gauge station ID"),
+        ("year" = i32, Path, description = "Calendar year (Jan 1 through Dec 31)")
+    ),
+    responses(
+        (status = 200, description = "Calendar year summary retrieved successfully", body = CalendarYearSummary),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[instrument(skip(state), fields(station_id = %station_id, year = %year))]
 async fn get_calendar_year(
     State(state): State<AppState>,
@@ -110,6 +222,19 @@ async fn get_calendar_year(
     Ok(Json(summary))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/readings/{station_id}/latest",
+    tag = "readings",
+    params(
+        ("station_id" = String, Path, description = "Rain gauge station ID")
+    ),
+    responses(
+        (status = 200, description = "Latest reading retrieved successfully", body = Reading),
+        (status = 404, description = "No readings found for this gauge"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[instrument(skip(state), fields(station_id = %station_id))]
 async fn get_latest(
     State(state): State<AppState>,
@@ -140,6 +265,18 @@ async fn get_latest(
     Ok(Json(reading))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/gauges",
+    tag = "gauges",
+    params(
+        PaginationParams
+    ),
+    responses(
+        (status = 200, description = "Paginated list of gauges retrieved successfully", body = GaugeListResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[instrument(skip(state))]
 async fn get_all_gauges(
     State(state): State<AppState>,
@@ -170,6 +307,19 @@ async fn get_all_gauges(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/gauges/{station_id}",
+    tag = "gauges",
+    params(
+        ("station_id" = String, Path, description = "Rain gauge station ID")
+    ),
+    responses(
+        (status = 200, description = "Gauge details retrieved successfully", body = GaugeSummary),
+        (status = 404, description = "Gauge not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[instrument(skip(state), fields(station_id = %station_id))]
 async fn get_gauge_by_id(
     State(state): State<AppState>,

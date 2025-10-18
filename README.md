@@ -158,14 +158,30 @@ cargo run
 To avoid CI failures, run the same checks locally before committing:
 
 ```bash
-# Run all CI checks (format, clippy, tests)
+# Run all CI checks (format, clippy, tests, openapi)
 make ci-check
 
 # Or run individually:
 make fmt      # Check code formatting
 make clippy   # Run clippy with warnings as errors
 make test     # Run all tests
+make openapi  # Generate openapi.json spec file
 ```
+
+### API Documentation
+
+The API is documented using OpenAPI 3.1. The specification is automatically generated from code annotations:
+
+- **OpenAPI Spec**: `openapi.json` (automatically kept in sync)
+- **Interactive Docs**: Start the service and visit `http://localhost:8080/docs` for Redoc UI
+- **Raw JSON Spec**: `http://localhost:8080/api-docs/openapi.json`
+
+To regenerate the OpenAPI spec:
+```bash
+make openapi
+```
+
+The pre-commit hook automatically regenerates `openapi.json` and stages it for commit, ensuring the spec is always up to date with the code.
 
 ### Pre-commit Hook
 

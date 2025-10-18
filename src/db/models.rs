@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::FromRow;
+use utoipa::ToSchema;
 
 // Database entity models
-#[derive(Debug, Clone, FromRow, Serialize)]
+#[derive(Debug, Clone, FromRow, Serialize, ToSchema)]
 pub struct Reading {
     pub id: i64,
     pub reading_datetime: DateTime<Utc>,
@@ -13,7 +14,7 @@ pub struct Reading {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize)]
+#[derive(Debug, Clone, FromRow, Serialize, ToSchema)]
 pub struct GaugeSummary {
     pub id: i64,
     pub station_id: String,
@@ -30,7 +31,7 @@ pub struct GaugeSummary {
 }
 
 // API response DTOs (to avoid circular dependency between services and api modules)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct WaterYearSummary {
     pub water_year: i32,
     pub total_readings: usize,
@@ -38,7 +39,7 @@ pub struct WaterYearSummary {
     pub readings: Vec<Reading>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct CalendarYearSummary {
     pub calendar_year: i32,
     pub total_readings: usize,
@@ -47,7 +48,7 @@ pub struct CalendarYearSummary {
     pub readings: Vec<Reading>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct MonthlySummary {
     pub month: u32,
     pub month_name: String,

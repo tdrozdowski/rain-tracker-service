@@ -82,6 +82,16 @@ jobs:
           DATABASE_URL: ${{ env.DATABASE_URL_TEST }}
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Generate and verify OpenAPI spec
+        run: |
+          cargo run --bin generate-openapi
+          if [ -n "$(git diff --name-only openapi.json)" ]; then
+            echo "❌ openapi.json is out of date! Run 'make openapi' to regenerate."
+            git diff openapi.json
+            exit 1
+          fi
+          echo "✅ openapi.json is up to date"
+
       - name: Build
         env:
           DATABASE_URL: ${{ env.DATABASE_URL_TEST }}

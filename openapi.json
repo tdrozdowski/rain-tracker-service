@@ -1,0 +1,531 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Rain Tracker Service API",
+    "description": "API for querying rain gauge readings and gauge information from the Maricopa County Flood Control District",
+    "contact": {
+      "name": "Rain Tracker Service"
+    },
+    "license": {
+      "name": ""
+    },
+    "version": "0.3.0"
+  },
+  "paths": {
+    "/api/v1/gauges": {
+      "get": {
+        "tags": [
+          "gauges"
+        ],
+        "operationId": "get_all_gauges",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of gauges retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GaugeListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/v1/gauges/{station_id}": {
+      "get": {
+        "tags": [
+          "gauges"
+        ],
+        "operationId": "get_gauge_by_id",
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "description": "Rain gauge station ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gauge details retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GaugeSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gauge not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/readings/{station_id}/calendar-year/{year}": {
+      "get": {
+        "tags": [
+          "readings"
+        ],
+        "operationId": "get_calendar_year",
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "description": "Rain gauge station ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "Calendar year (Jan 1 through Dec 31)",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Calendar year summary retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarYearSummary"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/v1/readings/{station_id}/latest": {
+      "get": {
+        "tags": [
+          "readings"
+        ],
+        "operationId": "get_latest",
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "description": "Rain gauge station ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest reading retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reading"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No readings found for this gauge"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/v1/readings/{station_id}/water-year/{year}": {
+      "get": {
+        "tags": [
+          "readings"
+        ],
+        "operationId": "get_water_year",
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "description": "Rain gauge station ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "Water year (Oct 1 of year-1 through Sep 30 of year)",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Water year summary retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaterYearSummary"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CalendarYearSummary": {
+        "type": "object",
+        "required": [
+          "calendar_year",
+          "total_readings",
+          "year_to_date_rainfall_inches",
+          "monthly_summaries",
+          "readings"
+        ],
+        "properties": {
+          "calendar_year": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "monthly_summaries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonthlySummary"
+            }
+          },
+          "readings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reading"
+            }
+          },
+          "total_readings": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "year_to_date_rainfall_inches": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "GaugeListResponse": {
+        "type": "object",
+        "required": [
+          "total_gauges",
+          "page",
+          "page_size",
+          "total_pages",
+          "has_next_page",
+          "has_prev_page",
+          "gauges"
+        ],
+        "properties": {
+          "gauges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GaugeSummary"
+            }
+          },
+          "has_next_page": {
+            "type": "boolean"
+          },
+          "has_prev_page": {
+            "type": "boolean"
+          },
+          "last_scraped_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total_gauges": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_pages": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "GaugeSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "station_id",
+          "gauge_name",
+          "last_scraped_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "city_town": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "elevation_ft": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "gauge_name": {
+            "type": "string"
+          },
+          "general_location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_scraped_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "msp_forecast_zone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rainfall_past_24h_inches": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "rainfall_past_6h_inches": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "station_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "MonthlySummary": {
+        "type": "object",
+        "required": [
+          "month",
+          "month_name",
+          "readings_count",
+          "monthly_rainfall_inches",
+          "cumulative_ytd_inches"
+        ],
+        "properties": {
+          "cumulative_ytd_inches": {
+            "type": "number",
+            "format": "double"
+          },
+          "month": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "month_name": {
+            "type": "string"
+          },
+          "monthly_rainfall_inches": {
+            "type": "number",
+            "format": "double"
+          },
+          "readings_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Reading": {
+        "type": "object",
+        "required": [
+          "id",
+          "reading_datetime",
+          "cumulative_inches",
+          "incremental_inches",
+          "station_id",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cumulative_inches": {
+            "type": "number",
+            "format": "double"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "incremental_inches": {
+            "type": "number",
+            "format": "double"
+          },
+          "reading_datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "station_id": {
+            "type": "string"
+          }
+        }
+      },
+      "WaterYearSummary": {
+        "type": "object",
+        "required": [
+          "water_year",
+          "total_readings",
+          "total_rainfall_inches",
+          "readings"
+        ],
+        "properties": {
+          "readings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reading"
+            }
+          },
+          "total_rainfall_inches": {
+            "type": "number",
+            "format": "double"
+          },
+          "total_readings": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "water_year": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Health check endpoints"
+    },
+    {
+      "name": "readings",
+      "description": "Rain gauge reading endpoints"
+    },
+    {
+      "name": "gauges",
+      "description": "Gauge information endpoints"
+    }
+  ]
+}

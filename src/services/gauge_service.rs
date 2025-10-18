@@ -1,9 +1,10 @@
 use crate::db::{DbError, GaugeRepository, GaugeSummary};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use utoipa::{IntoParams, ToSchema};
 
 // Pagination types (used by API)
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, IntoParams)]
 pub struct PaginationParams {
     #[serde(default = "default_page")]
     pub page: u32,
@@ -29,7 +30,7 @@ impl PaginationParams {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct GaugeListResponse {
     pub total_gauges: usize,
     pub page: u32,

@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "rain-tracker-service"
 path = "src/main.rs"
 
+[[bin]]
+name = "generate-openapi"
+path = "src/bin/generate-openapi.rs"
+
 [dependencies]
 axum = "0.8"
 tokio = { version = "1.48", features = ["full"] }
@@ -22,10 +26,10 @@ reqwest = "0.11"
 scraper = "0.19"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tower = "0.4"
 tower-http = { version = "0.5", features = ["trace"] }
 dotenvy = "0.15"
 thiserror = "1"
+utoipa = { version = "5", features = ["axum_extras", "chrono"] }
 
 [dev-dependencies]
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "chrono"] }

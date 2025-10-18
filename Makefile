@@ -1,4 +1,4 @@
-.PHONY: help check fmt fmt-fix clippy test ci-check clean
+.PHONY: help check fmt fmt-fix clippy test ci-check clean openapi
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -21,7 +21,10 @@ clippy: ## Run clippy with warnings as errors (exactly as CI does)
 test: ## Run all tests
 	cargo test --all-targets
 
-ci-check: fmt clippy test ## Run all CI checks locally (format, clippy, tests)
+openapi: ## Generate openapi.json spec file
+	cargo run --bin generate-openapi
+
+ci-check: fmt clippy test openapi ## Run all CI checks locally (format, clippy, tests, openapi)
 	@echo "✅ All CI checks passed!"
 
 clean: ## Clean build artifacts
