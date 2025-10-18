@@ -151,6 +151,31 @@ sqlx migrate run
 cargo run
 ```
 
+## Development Workflow
+
+### Running CI Checks Locally
+
+To avoid CI failures, run the same checks locally before committing:
+
+```bash
+# Run all CI checks (format, clippy, tests)
+make ci-check
+
+# Or run individually:
+make fmt      # Check code formatting
+make clippy   # Run clippy with warnings as errors
+make test     # Run all tests
+```
+
+### Pre-commit Hook
+
+A git pre-commit hook is installed that automatically runs clippy before each commit. This prevents accidentally committing code with clippy warnings that would fail CI.
+
+To bypass the hook (not recommended):
+```bash
+git commit --no-verify
+```
+
 ## Running Tests
 
 ### Unit Tests

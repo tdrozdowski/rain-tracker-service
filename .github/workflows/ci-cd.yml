@@ -62,7 +62,7 @@ jobs:
       - name: Run clippy
         env:
           DATABASE_URL: ${{ env.DATABASE_URL_TEST }}
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Build
         env:
