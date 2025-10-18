@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, station_id, gauge_name, city_town, elevation_ft,\n                   general_location, msp_forecast_zone,\n                   rainfall_past_6h_inches, rainfall_past_24h_inches,\n                   last_scraped_at, created_at, updated_at\n            FROM gauge_summaries\n            WHERE station_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "station_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "gauge_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "city_town",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "elevation_ft",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "general_location",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "msp_forecast_zone",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "rainfall_past_6h_inches",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "rainfall_past_24h_inches",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_scraped_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "51ffeeb0b118a4ef2ff8628c0251ebe4060eaa04ce1770dd5d4f9ae99c4c2ab3"
+}

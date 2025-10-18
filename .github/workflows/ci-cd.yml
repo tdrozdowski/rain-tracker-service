@@ -1,0 +1,226 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: password
+  POSTGRES_DB_TEST: rain_tracker_test
+  POSTGRES_DB: rain_tracker
+  DATABASE_URL_TEST: postgres://postgres:password@localhost:5432/rain_tracker_test
+  DATABASE_URL: postgres://postgres:password@localhost:5432/rain_tracker
+  # Application config - can be overridden via GitHub secrets
+  GAUGE_URL: ${{ secrets.GAUGE_URL || 'https://alert.fcd.maricopa.gov/php/showdata4.php?ID=59700&NM=1000' }}
+  GAUGE_LIST_URL: ${{ secrets.GAUGE_LIST_URL || 'https://alert.fcd.maricopa.gov/alert/Rain/ev_rain.txt' }}
+
+jobs:
+  # Job 1: Build and run unit tests
+  build-and-test:
+    name: Build and Unit Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB_TEST }}
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Run unit tests
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_TEST }}
+        run: cargo test --lib --verbose
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_TEST }}
+        run: cargo test --test '*' --verbose
+
+  # Job 2: API Tests (runs after build-and-test succeeds)
+  api-tests:
+    name: API Integration Tests
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build application
+        run: cargo build --release
+
+      - name: Start application
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          SERVER_HOST: 0.0.0.0
+          SERVER_PORT: 8080
+          GAUGE_URL: ${{ env.GAUGE_URL }}
+          GAUGE_LIST_URL: ${{ env.GAUGE_LIST_URL }}
+          FETCH_INTERVAL_MINUTES: 999999
+          GAUGE_LIST_INTERVAL_MINUTES: 999999
+          RUST_LOG: info
+        run: |
+          ./target/release/rain-tracker-service &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/api/v1/health > /dev/null; then
+              echo "Server is ready"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+          echo "Server failed to start"
+          exit 1
+
+      - name: Test API endpoints
+        run: |
+          # Health check
+          curl -f http://localhost:8080/api/v1/health
+
+          # Readings endpoints
+          curl -f http://localhost:8080/api/v1/readings/latest || echo "No readings yet"
+          curl -f http://localhost:8080/api/v1/readings/water-year/2025
+          curl -f http://localhost:8080/api/v1/readings/calendar-year/2025
+
+          # Gauge endpoints
+          curl -f http://localhost:8080/api/v1/gauges
+          curl -s http://localhost:8080/api/v1/gauges/59700 || echo "Gauge not found yet"
+
+      - name: Stop application
+        if: always()
+        run: kill $SERVER_PID || true
+
+  # Job 3: Build and push Docker image to GHCR (runs after api-tests succeeds, only on push to main/master)
+  docker-build-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: api-tests
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    permissions:
+      contents: read
+      packages: write
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres
+
+      - name: Prepare SQLx offline mode
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          cargo sqlx migrate run
+          cargo sqlx prepare --workspace
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate deployment summary
+        run: |
+          echo "## 🚀 Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`${{ env.REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull command:**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
