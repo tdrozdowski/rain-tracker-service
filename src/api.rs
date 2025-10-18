@@ -26,8 +26,14 @@ pub struct HealthResponse {
 pub fn create_router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/health", get(health))
-        .route("/readings/{station_id}/water-year/{year}", get(get_water_year))
-        .route("/readings/{station_id}/calendar-year/{year}", get(get_calendar_year))
+        .route(
+            "/readings/{station_id}/water-year/{year}",
+            get(get_water_year),
+        )
+        .route(
+            "/readings/{station_id}/calendar-year/{year}",
+            get(get_calendar_year),
+        )
         .route("/readings/{station_id}/latest", get(get_latest))
         .route("/gauges", get(get_all_gauges))
         .route("/gauges/{station_id}", get(get_gauge_by_id))
@@ -51,13 +57,19 @@ async fn get_water_year(
     State(state): State<AppState>,
     Path((station_id, year)): Path<(String, i32)>,
 ) -> Result<Json<crate::db::WaterYearSummary>, StatusCode> {
-    debug!("Fetching rain year readings for gauge {} year {}", station_id, year);
+    debug!(
+        "Fetching rain year readings for gauge {} year {}",
+        station_id, year
+    );
     let summary = state
         .reading_service
         .get_water_year_summary(&station_id, year)
         .await
         .map_err(|e| {
-            error!("Failed to fetch rain year readings for gauge {} year {}: {}", station_id, year, e);
+            error!(
+                "Failed to fetch rain year readings for gauge {} year {}: {}",
+                station_id, year, e
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -74,13 +86,19 @@ async fn get_calendar_year(
     State(state): State<AppState>,
     Path((station_id, year)): Path<(String, i32)>,
 ) -> Result<Json<crate::db::CalendarYearSummary>, StatusCode> {
-    debug!("Fetching calendar year readings for gauge {} year {}", station_id, year);
+    debug!(
+        "Fetching calendar year readings for gauge {} year {}",
+        station_id, year
+    );
     let summary = state
         .reading_service
         .get_calendar_year_summary(&station_id, year)
         .await
         .map_err(|e| {
-            error!("Failed to fetch calendar year readings for gauge {} year {}: {}", station_id, year, e);
+            error!(
+                "Failed to fetch calendar year readings for gauge {} year {}: {}",
+                station_id, year, e
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -103,7 +121,10 @@ async fn get_latest(
         .get_latest_reading(&station_id)
         .await
         .map_err(|e| {
-            error!("Failed to fetch latest reading for gauge {}: {}", station_id, e);
+            error!(
+                "Failed to fetch latest reading for gauge {}: {}",
+                station_id, e
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .ok_or_else(|| {
@@ -111,7 +132,10 @@ async fn get_latest(
             StatusCode::NOT_FOUND
         })?;
 
-    info!("Retrieved latest reading for gauge {} from {}", station_id, reading.reading_datetime);
+    info!(
+        "Retrieved latest reading for gauge {} from {}",
+        station_id, reading.reading_datetime
+    );
 
     Ok(Json(reading))
 }

@@ -44,7 +44,10 @@ async fn test_insert_and_retrieve_readings() {
     assert!(inserted > 0);
 
     // Retrieve latest reading (using a test station ID)
-    let latest = reading_service.get_latest_reading("test_station").await.unwrap();
+    let latest = reading_service
+        .get_latest_reading("test_station")
+        .await
+        .unwrap();
     assert!(latest.is_some());
 }
 

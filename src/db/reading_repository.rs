@@ -64,7 +64,10 @@ impl ReadingRepository {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Reading>, DbError> {
-        debug!("Querying readings for gauge {} from {} to {}", station_id, start, end);
+        debug!(
+            "Querying readings for gauge {} from {} to {}",
+            station_id, start, end
+        );
 
         let readings = sqlx::query_as!(
             Reading,

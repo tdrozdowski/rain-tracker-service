@@ -25,7 +25,10 @@ impl ReadingService {
         let (start, end) = Self::water_year_date_range(water_year);
 
         // Fetch data (repository)
-        let readings = self.reading_repo.find_by_date_range(station_id, start, end).await?;
+        let readings = self
+            .reading_repo
+            .find_by_date_range(station_id, start, end)
+            .await?;
 
         // Calculate summary (business logic)
         let total_rainfall = Self::calculate_total_rainfall(&readings);
@@ -48,7 +51,10 @@ impl ReadingService {
         let (start, end) = Self::calendar_year_date_range(year);
 
         // Fetch data (repository)
-        let mut readings = self.reading_repo.find_by_date_range(station_id, start, end).await?;
+        let mut readings = self
+            .reading_repo
+            .find_by_date_range(station_id, start, end)
+            .await?;
 
         // Sort and calculate (business logic)
         readings.sort_by_key(|r| r.reading_datetime);
