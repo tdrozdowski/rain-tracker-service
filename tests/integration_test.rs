@@ -43,11 +43,8 @@ async fn test_insert_and_retrieve_readings() {
     let inserted = reading_repo.insert_readings(&readings).await.unwrap();
     assert!(inserted > 0);
 
-    // Retrieve latest reading (using a test station ID)
-    let latest = reading_service
-        .get_latest_reading("test_station")
-        .await
-        .unwrap();
+    // Retrieve latest reading (using default station ID from migration: 59700)
+    let latest = reading_service.get_latest_reading("59700").await.unwrap();
     assert!(latest.is_some());
 }
 
@@ -72,10 +69,10 @@ async fn test_water_year_queries() {
     let reading_repo = ReadingRepository::new(pool.clone());
     let reading_service = ReadingService::new(reading_repo);
 
-    // Query for current rain year
+    // Query for current rain year (using default station ID from migration: 59700)
     let current_water_year = ReadingService::get_water_year(Utc::now());
     let _summary = reading_service
-        .get_water_year_summary("test_station", current_water_year)
+        .get_water_year_summary("59700", current_water_year)
         .await
         .unwrap();
 
@@ -103,10 +100,10 @@ async fn test_calendar_year_queries() {
     let reading_repo = ReadingRepository::new(pool.clone());
     let reading_service = ReadingService::new(reading_repo);
 
-    // Query for current calendar year
+    // Query for current calendar year (using default station ID from migration: 59700)
     let current_year = Utc::now().year();
     let _summary = reading_service
-        .get_calendar_year_summary("test_station", current_year)
+        .get_calendar_year_summary("59700", current_year)
         .await
         .unwrap();
 
