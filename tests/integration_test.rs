@@ -102,11 +102,10 @@ async fn test_calendar_year_queries() {
 
     // Query for current calendar year
     let current_year = Utc::now().year();
-    let summary = reading_service
+    let _summary = reading_service
         .get_calendar_year_summary(current_year)
         .await
         .unwrap();
 
-    // Should return some readings (assuming we've inserted some)
-    assert!(summary.readings.len() >= 0);
+    // Test passes if query completes without error
 }
