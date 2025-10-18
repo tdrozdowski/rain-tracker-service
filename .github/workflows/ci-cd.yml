@@ -55,6 +55,8 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Build
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_TEST }}
         run: cargo build --verbose
 
       - name: Run unit tests
