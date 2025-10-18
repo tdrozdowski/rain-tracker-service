@@ -71,13 +71,12 @@ async fn test_water_year_queries() {
 
     // Query for current rain year
     let current_water_year = ReadingService::get_water_year(Utc::now());
-    let summary = reading_service
+    let _summary = reading_service
         .get_water_year_summary(current_water_year)
         .await
         .unwrap();
 
-    // Should return some readings (assuming we've inserted some)
-    assert!(summary.readings.len() >= 0);
+    // Test passes if query completes without error
 }
 
 #[tokio::test]

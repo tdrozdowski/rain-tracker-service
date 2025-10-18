@@ -55,7 +55,7 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
         Err(e) => {
             error!("Health check failed: {}", e);
             let response = HealthResponse {
-                status: format!("unhealthy: {}", e),
+                status: format!("unhealthy: {e}"),
                 latest_reading: None,
             };
             (StatusCode::SERVICE_UNAVAILABLE, Json(response))

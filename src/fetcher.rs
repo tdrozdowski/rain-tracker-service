@@ -143,7 +143,7 @@ impl RainGaugeFetcher {
         cumulative_str: &str,
         incremental_str: &str,
     ) -> Result<RainReading, FetchError> {
-        let datetime_str = format!("{} {}", date_str, time_str);
+        let datetime_str = format!("{date_str} {time_str}");
         let naive_dt = NaiveDateTime::parse_from_str(&datetime_str, "%m/%d/%Y %H:%M:%S")
             .map_err(|e| FetchError::DateTimeError(e.to_string()))?;
 
