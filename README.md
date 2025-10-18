@@ -20,27 +20,49 @@ GET /api/v1/health
 ```
 Returns service health status and latest reading.
 
-### Get Rain Year Readings
+### Get Water Year Readings
 ```
-GET /api/v1/readings/water-year/{year}
+GET /api/v1/readings/{gauge_id}/water-year/{year}
 ```
-Returns all readings for a rain year (Oct 1 of year-1 through Sep 30 of year).
+Returns all readings for a specific gauge for a water year (Oct 1 of year-1 through Sep 30 of year).
 
-Example: `GET /api/v1/readings/water-year/2025` returns readings from Oct 1, 2024 to Sep 30, 2025.
+Example: `GET /api/v1/readings/59700/water-year/2025` returns readings for gauge 59700 from Oct 1, 2024 to Sep 30, 2025.
 
 ### Get Calendar Year Readings
 ```
-GET /api/v1/readings/calendar-year/{year}
+GET /api/v1/readings/{gauge_id}/calendar-year/{year}
 ```
-Returns all readings for a calendar year (Jan 1 through Dec 31).
+Returns all readings for a specific gauge for a calendar year (Jan 1 through Dec 31).
 
-Example: `GET /api/v1/readings/calendar-year/2025` returns readings from Jan 1, 2025 to Dec 31, 2025.
+Example: `GET /api/v1/readings/59700/calendar-year/2025` returns readings for gauge 59700 from Jan 1, 2025 to Dec 31, 2025.
 
 ### Get Latest Reading
 ```
-GET /api/v1/readings/latest
+GET /api/v1/readings/{gauge_id}/latest
 ```
-Returns the most recent rain gauge reading.
+Returns the most recent reading for a specific gauge.
+
+Example: `GET /api/v1/readings/59700/latest` returns the latest reading for gauge 59700.
+
+### Get All Gauges
+```
+GET /api/v1/gauges?page=1&page_size=50
+```
+Returns a paginated list of all rain gauges with their latest rainfall data.
+
+Query parameters:
+- `page` (optional): Page number (default: 1)
+- `page_size` (optional): Number of items per page (default: 50, max: 100)
+
+Example: `GET /api/v1/gauges?page=1&page_size=25`
+
+### Get Gauge by ID
+```
+GET /api/v1/gauges/{station_id}
+```
+Returns detailed information for a specific gauge by its station ID.
+
+Example: `GET /api/v1/gauges/59700` returns data for gauge 59700.
 
 ## Configuration
 
@@ -187,8 +209,11 @@ Edit `k8s/secret.yaml` with your actual database URL before deploying.
 - [ ] Deploy to K8s cluster
 - [ ] Verify database migrations succeed
 - [x] Test `/api/v1/health` endpoint returns 200
-- [x] Test `/api/v1/readings/water-year/2025` returns valid data
-- [x] Test `/api/v1/readings/calendar-year/2025` returns valid data
+- [x] Test `/api/v1/readings/{gauge_id}/water-year/2025` returns valid data
+- [x] Test `/api/v1/readings/{gauge_id}/calendar-year/2025` returns valid data
+- [x] Test `/api/v1/readings/{gauge_id}/latest` returns valid data
+- [x] Test `/api/v1/gauges` endpoint returns paginated gauge list
+- [x] Test `/api/v1/gauges/{station_id}` returns gauge details
 - [ ] Verify scheduler fetches data at configured interval
 - [ ] Check logs for errors
 - [ ] Verify data deduplication works (no duplicate readings)
@@ -205,6 +230,36 @@ The MCFCD table contains:
 - Date and Time of reading
 - Cumulative rainfall (inches) for the current rain year
 - Incremental rainfall (inches) for that specific reading
+
+## Recent Changes
+
+### v0.3.0 - Gauge-Specific Endpoints (2025)
+- **Breaking Change**: All readings endpoints now require a gauge ID parameter
+  - Old: `GET /api/v1/readings/water-year/{year}`
+  - New: `GET /api/v1/readings/{gauge_id}/water-year/{year}`
+  - Old: `GET /api/v1/readings/calendar-year/{year}`
+  - New: `GET /api/v1/readings/{gauge_id}/calendar-year/{year}`
+  - Old: `GET /api/v1/readings/latest`
+  - New: `GET /api/v1/readings/{gauge_id}/latest`
+- Added `/api/v1/gauges` endpoint for listing all gauges with pagination
+- Added `/api/v1/gauges/{station_id}` endpoint for getting specific gauge details
+- Simplified `/api/v1/health` endpoint to only return status (removed latest_reading field)
+- Improved database queries to filter by gauge ID for better performance and consistency
+- Fixed non-deterministic behavior in latest reading queries
+- Updated HTTP tests to use gauge-specific endpoints
+
+### v0.2.0 - Multi-Gauge Support (2025)
+- Added support for tracking multiple rain gauges
+- Implemented gauge metadata storage (name, location, elevation, etc.)
+- Added 6-hour and 24-hour rainfall aggregations per gauge
+- Enhanced scraper to handle multi-gauge data from MCFCD
+
+### v0.1.0 - Initial Release
+- Basic rain tracker functionality for single gauge
+- Water year and calendar year queries
+- Automated data collection from MCFCD website
+- PostgreSQL storage with deduplication
+- REST API with health check endpoint
 
 ## License
 

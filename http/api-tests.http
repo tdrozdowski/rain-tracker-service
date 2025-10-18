@@ -11,15 +11,15 @@ GET {{baseUrl}}/api/v1/health
         client.assert(response.body.status === "healthy", "Status is not healthy");
     });
 
-    client.test("Health check has latest_reading field", function() {
-        client.assert(response.body.hasOwnProperty("latest_reading"), "Response doesn't have latest_reading field");
+    client.test("Health check has status field", function() {
+        client.assert(response.body.hasOwnProperty("status"), "Response doesn't have status field");
     });
 %}
 
 ###
 
 ### Get Latest Reading
-GET {{baseUrl}}/api/v1/readings/latest
+GET {{baseUrl}}/api/v1/readings/59700/latest
 
 > {%
     client.test("Latest reading returns 200 or 404", function() {
@@ -41,7 +41,7 @@ GET {{baseUrl}}/api/v1/readings/latest
 ###
 
 ### Get Rain Year Readings - Current Year (2025)
-GET {{baseUrl}}/api/v1/readings/water-year/2025
+GET {{baseUrl}}/api/v1/readings/59700/water-year/2025
 
 > {%
     client.test("Water year returns 200", function() {
@@ -72,7 +72,7 @@ GET {{baseUrl}}/api/v1/readings/water-year/2025
 ###
 
 ### Get Rain Year Readings - 2024
-GET {{baseUrl}}/api/v1/readings/water-year/2024
+GET {{baseUrl}}/api/v1/readings/59700/water-year/2024
 
 > {%
     client.test("Water year 2024 returns 200", function() {
@@ -87,7 +87,7 @@ GET {{baseUrl}}/api/v1/readings/water-year/2024
 ###
 
 ### Get Calendar Year Readings - Current Year (2025)
-GET {{baseUrl}}/api/v1/readings/calendar-year/2025
+GET {{baseUrl}}/api/v1/readings/59700/calendar-year/2025
 
 > {%
     client.test("Calendar year returns 200", function() {
@@ -118,7 +118,7 @@ GET {{baseUrl}}/api/v1/readings/calendar-year/2025
 ###
 
 ### Get Calendar Year Readings - 2024
-GET {{baseUrl}}/api/v1/readings/calendar-year/2024
+GET {{baseUrl}}/api/v1/readings/59700/calendar-year/2024
 
 > {%
     client.test("Calendar year 2024 returns 200", function() {
@@ -133,7 +133,7 @@ GET {{baseUrl}}/api/v1/readings/calendar-year/2024
 ###
 
 ### Invalid Rain Year (should still return 200 with empty data)
-GET {{baseUrl}}/api/v1/readings/water-year/1900
+GET {{baseUrl}}/api/v1/readings/59700/water-year/1900
 
 > {%
     client.test("Old rain year returns 200", function() {
@@ -149,7 +149,7 @@ GET {{baseUrl}}/api/v1/readings/water-year/1900
 ###
 
 ### Invalid Calendar Year (should still return 200 with empty data)
-GET {{baseUrl}}/api/v1/readings/calendar-year/1900
+GET {{baseUrl}}/api/v1/readings/59700/calendar-year/1900
 
 > {%
     client.test("Old calendar year returns 200", function() {

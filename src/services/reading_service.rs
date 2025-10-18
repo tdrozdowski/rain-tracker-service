@@ -18,13 +18,14 @@ impl ReadingService {
     /// Get water year summary with business logic
     pub async fn get_water_year_summary(
         &self,
+        station_id: &str,
         water_year: i32,
     ) -> Result<WaterYearSummary, DbError> {
         // Calculate date range (business logic)
         let (start, end) = Self::water_year_date_range(water_year);
 
         // Fetch data (repository)
-        let readings = self.reading_repo.find_by_date_range(start, end).await?;
+        let readings = self.reading_repo.find_by_date_range(station_id, start, end).await?;
 
         // Calculate summary (business logic)
         let total_rainfall = Self::calculate_total_rainfall(&readings);
@@ -40,13 +41,14 @@ impl ReadingService {
     /// Get calendar year summary with monthly breakdowns
     pub async fn get_calendar_year_summary(
         &self,
+        station_id: &str,
         year: i32,
     ) -> Result<CalendarYearSummary, DbError> {
         // Calculate date range (business logic)
         let (start, end) = Self::calendar_year_date_range(year);
 
         // Fetch data (repository)
-        let mut readings = self.reading_repo.find_by_date_range(start, end).await?;
+        let mut readings = self.reading_repo.find_by_date_range(station_id, start, end).await?;
 
         // Sort and calculate (business logic)
         readings.sort_by_key(|r| r.reading_datetime);
@@ -69,9 +71,9 @@ impl ReadingService {
         })
     }
 
-    /// Get latest reading
-    pub async fn get_latest_reading(&self) -> Result<Option<Reading>, DbError> {
-        self.reading_repo.find_latest().await
+    /// Get latest reading for a specific gauge
+    pub async fn get_latest_reading(&self, station_id: &str) -> Result<Option<Reading>, DbError> {
+        self.reading_repo.find_latest(station_id).await
     }
 
     // Business logic helpers (private)
