@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
       - name: rain-tracker
-        image: ghcr.io/tdrozdowski/rain-tracker-service:master-e8697e9
+        image: ghcr.io/tdrozdowski/rain-tracker-service:master-8744b5c
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
