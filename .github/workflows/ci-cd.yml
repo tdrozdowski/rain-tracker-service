@@ -83,6 +83,8 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Generate and verify OpenAPI spec
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_TEST }}
         run: |
           cargo run --bin generate-openapi
           if [ -n "$(git diff --name-only openapi.json)" ]; then
