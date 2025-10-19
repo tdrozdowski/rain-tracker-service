@@ -5,7 +5,7 @@ metadata:
   namespace: argocd
   annotations:
     argocd-image-updater.argoproj.io/image-list: rain-tracker=ghcr.io/tdrozdowski/rain-tracker-service
-    argocd-image-updater.argoproj.io/rain-tracker.update-strategy: digest
+    argocd-image-updater.argoproj.io/rain-tracker.update-strategy: newest-build
     argocd-image-updater.argoproj.io/rain-tracker.allow-tags: regexp:^master-[a-f0-9]{7}$
     argocd-image-updater.argoproj.io/rain-tracker.force-update: "true"
     argocd-image-updater.argoproj.io/write-back-method: argocd
