@@ -88,6 +88,7 @@ use crate::db::{CalendarYearSummary, GaugeSummary, MonthlySummary, WaterYearSumm
 use crate::services::gauge_service::GaugeListResponse;
 
 /// Generate the OpenAPI specification
+/// utoipa 4.2 natively generates OpenAPI 3.0.x for better Rust tooling compatibility
 pub fn generate_openapi_spec() -> utoipa::openapi::OpenApi {
     ApiDoc::openapi()
 }

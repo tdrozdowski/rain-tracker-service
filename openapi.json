@@ -1,5 +1,5 @@
 {
-  "openapi": "3.1.0",
+  "openapi": "3.0.3",
   "info": {
     "title": "Rain Tracker Service API",
     "description": "API for querying rain gauge readings and gauge information from the Maricopa County Flood Control District",
@@ -303,11 +303,9 @@
             "type": "boolean"
           },
           "last_scraped_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "page": {
             "type": "integer",
@@ -342,30 +340,24 @@
         ],
         "properties": {
           "city_town": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
           "elevation_ft": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32"
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           },
           "gauge_name": {
             "type": "string"
           },
           "general_location": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "id": {
             "type": "integer",
@@ -376,24 +368,18 @@
             "format": "date-time"
           },
           "msp_forecast_zone": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "rainfall_past_24h_inches": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
+            "type": "number",
+            "format": "double",
+            "nullable": true
           },
           "rainfall_past_6h_inches": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
+            "type": "number",
+            "format": "double",
+            "nullable": true
           },
           "station_id": {
             "type": "string"
