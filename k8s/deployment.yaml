@@ -3,6 +3,12 @@ kind: Deployment
 metadata:
   name: rain-tracker
   namespace: rain-tracker
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: rain-tracker=ghcr.io/tdrozdowski/rain-tracker-service
+    argocd-image-updater.argoproj.io/rain-tracker.update-strategy: digest
+    argocd-image-updater.argoproj.io/rain-tracker.allow-tags: regexp:^master-[a-f0-9]{7}$
+    argocd-image-updater.argoproj.io/rain-tracker.pull-secret: pullsecret:rain-tracker/ghcr-pull-secret
+    argocd-image-updater.argoproj.io/write-back-method: git
 spec:
   replicas: 1
   selector:
@@ -15,7 +21,7 @@ spec:
     spec:
       containers:
       - name: rain-tracker
-        image: ghcr.io/tdrozdowski/rain-tracker-service:latest
+        image: ghcr.io/tdrozdowski/rain-tracker-service:master-e8697e9
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
