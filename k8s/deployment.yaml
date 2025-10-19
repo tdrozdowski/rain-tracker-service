@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rain-tracker
-  namespace: default
+  namespace: rain-tracker
 spec:
   replicas: 1
   selector:
@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: rain-tracker
-        image: rain-tracker-service:latest
+        image: ghcr.io/tdrozdowski/rain-tracker-service:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -24,7 +24,7 @@ spec:
         - configMapRef:
             name: rain-tracker-config
         - secretRef:
-            name: rain-tracker-secret
+            name: rain-tracker-db-secret
         livenessProbe:
           httpGet:
             path: /api/v1/health

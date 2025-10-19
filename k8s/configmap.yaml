@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: rain-tracker-config
-  namespace: default
+  namespace: rain-tracker
 data:
   SERVER_HOST: "0.0.0.0"
   SERVER_PORT: "8080"

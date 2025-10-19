@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: rain-tracker-service
-  namespace: default
+  namespace: rain-tracker
 spec:
   selector:
     app: rain-tracker
