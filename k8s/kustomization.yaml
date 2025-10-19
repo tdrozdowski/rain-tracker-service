@@ -3,6 +3,6 @@ kind: Kustomization
 
 resources:
   - configmap.yaml
-  - db-secrets.yaml
+  - rain-tracker-sealedsecrets.yaml
   - deployment.yaml
   - service.yaml
