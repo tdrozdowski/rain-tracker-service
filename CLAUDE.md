@@ -201,9 +201,11 @@ When progenitor adds 3.1 support, we can upgrade to utoipa 5.x.
 
 ### Multi-Stage Dockerfile
 - **Build stage**: `rust:1.85` - compiles release binary with SQLx offline mode
-- **Runtime stage**: `debian:bookworm-slim` - minimal image with ca-certificates for SSL
+- **Runtime stage**: `debian:trixie-slim` - minimal image with ca-certificates for SSL
 
-**SSL Certificates**: Runtime stage runs `update-ca-certificates` to ensure HTTPS requests work (reqwest uses native-tls/OpenSSL).
+**SSL Certificates**: Uses Debian Trixie (13) which includes the SSL.com TLS RSA Root CA 2022 certificate needed for alert.fcd.maricopa.gov. Debian Bookworm (12) doesn't include this newer root CA and would require manual installation.
+
+**Why Trixie instead of Bookworm?** The Maricopa County website uses an SSL.com certificate signed by a root CA that was added to Mozilla's bundle in 2023, after Debian Bookworm froze its packages. Debian Trixie (released August 2025) includes this root CA by default.
 
 ### K8s Manifests
 Located in `k8s/`:
@@ -235,7 +237,7 @@ Located in `http/api-tests.http`. Uses IntelliJ HTTP Client format. CI runs thes
    - Set `SQLX_OFFLINE=true` (requires `.sqlx/` directory to exist)
    - This affects ALL cargo commands: build, check, clippy, test, run
 
-2. **SSL certificate errors in K8s**: Ensure Dockerfile runs `update-ca-certificates` in runtime stage
+2. **SSL certificate errors in K8s**: Ensure Dockerfile uses `debian:trixie-slim` (not bookworm) and runs `update-ca-certificates`. Debian Trixie includes the SSL.com root CA needed for alert.fcd.maricopa.gov
 
 3. **OpenAPI CI failure**: Run `make openapi` locally and commit the generated file
 
