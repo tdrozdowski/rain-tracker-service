@@ -56,3 +56,19 @@ pub struct MonthlySummary {
     pub monthly_rainfall_inches: f64,
     pub cumulative_ytd_inches: f64,
 }
+
+#[derive(Debug, Clone, FromRow, Serialize, ToSchema)]
+pub struct MonthlyRainfallSummary {
+    pub id: i64,
+    pub station_id: String,
+    pub year: i32,
+    pub month: i32,
+    pub total_rainfall_inches: f64,
+    pub reading_count: i32,
+    pub first_reading_date: Option<DateTime<Utc>>,
+    pub last_reading_date: Option<DateTime<Utc>>,
+    pub min_cumulative_inches: Option<f64>,
+    pub max_cumulative_inches: Option<f64>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

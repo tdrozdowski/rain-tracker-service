@@ -5,7 +5,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 use rain_tracker_service::api::{create_router, AppState};
 use rain_tracker_service::config::Config;
-use rain_tracker_service::db::{GaugeRepository, ReadingRepository};
+use rain_tracker_service::db::{GaugeRepository, MonthlyRainfallRepository, ReadingRepository};
 use rain_tracker_service::fetcher::RainGaugeFetcher;
 use rain_tracker_service::gauge_list_fetcher::GaugeListFetcher;
 use rain_tracker_service::scheduler;
@@ -51,9 +51,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create repositories
     let reading_repo = ReadingRepository::new(pool.clone());
     let gauge_repo = GaugeRepository::new(pool.clone());
+    let monthly_rainfall_repo = MonthlyRainfallRepository::new(pool.clone());
 
     // Create services
-    let reading_service = ReadingService::new(reading_repo.clone());
+    let reading_service = ReadingService::new(reading_repo.clone(), monthly_rainfall_repo.clone());
     let gauge_service = GaugeService::new(gauge_repo.clone());
 
     // Create fetchers
@@ -65,12 +66,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Scheduler 1: Individual gauge readings (15 min interval)
     let reading_repo_clone = reading_repo.clone();
+    let monthly_repo_clone = monthly_rainfall_repo.clone();
     let reading_fetcher_clone = reading_fetcher.clone();
     let reading_interval = config.fetch_interval_minutes;
     tokio::spawn(async move {
         scheduler::start_fetch_scheduler(
             reading_fetcher_clone,
             reading_repo_clone,
+            monthly_repo_clone,
             reading_interval,
         )
         .await;

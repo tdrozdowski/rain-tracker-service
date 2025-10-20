@@ -2,17 +2,25 @@ use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use std::collections::HashMap;
 
 use crate::db::{
-    CalendarYearSummary, DbError, MonthlySummary, Reading, ReadingRepository, WaterYearSummary,
+    CalendarYearSummary, DbError, MonthlyRainfallRepository, MonthlySummary, Reading,
+    ReadingRepository, WaterYearSummary,
 };
 
 #[derive(Clone)]
 pub struct ReadingService {
     reading_repo: ReadingRepository,
+    monthly_rainfall_repo: MonthlyRainfallRepository,
 }
 
 impl ReadingService {
-    pub fn new(reading_repo: ReadingRepository) -> Self {
-        Self { reading_repo }
+    pub fn new(
+        reading_repo: ReadingRepository,
+        monthly_rainfall_repo: MonthlyRainfallRepository,
+    ) -> Self {
+        Self {
+            reading_repo,
+            monthly_rainfall_repo,
+        }
     }
 
     /// Get water year summary with business logic
@@ -21,21 +29,31 @@ impl ReadingService {
         station_id: &str,
         water_year: i32,
     ) -> Result<WaterYearSummary, DbError> {
-        // Calculate date range (business logic)
-        let (start, end) = Self::water_year_date_range(water_year);
+        // Fetch monthly summaries for the water year (Oct prev year - Sep current year)
+        let monthly_summaries = self
+            .monthly_rainfall_repo
+            .get_water_year_summaries(station_id, water_year)
+            .await?;
 
-        // Fetch data (repository)
+        // Calculate total rainfall by summing monthly totals
+        let total_rainfall: f64 = monthly_summaries
+            .iter()
+            .map(|m| m.total_rainfall_inches)
+            .sum();
+
+        // Calculate total readings count
+        let total_readings: i32 = monthly_summaries.iter().map(|m| m.reading_count).sum();
+
+        // Fetch actual readings for detailed view
+        let (start, end) = Self::water_year_date_range(water_year);
         let readings = self
             .reading_repo
             .find_by_date_range(station_id, start, end)
             .await?;
 
-        // Calculate summary (business logic)
-        let total_rainfall = Self::calculate_total_rainfall(&readings);
-
         Ok(WaterYearSummary {
             water_year,
-            total_readings: readings.len(),
+            total_readings: total_readings as usize,
             total_rainfall_inches: total_rainfall,
             readings,
         })
@@ -47,26 +65,29 @@ impl ReadingService {
         station_id: &str,
         year: i32,
     ) -> Result<CalendarYearSummary, DbError> {
-        // Calculate date range (business logic)
-        let (start, end) = Self::calendar_year_date_range(year);
+        // Fetch monthly summaries for the calendar year
+        let monthly_summaries_db = self
+            .monthly_rainfall_repo
+            .get_calendar_year_summaries(station_id, year)
+            .await?;
 
-        // Fetch data (repository)
+        // Calculate year-to-date rainfall by summing monthly totals
+        let year_to_date_rainfall: f64 = monthly_summaries_db
+            .iter()
+            .map(|m| m.total_rainfall_inches)
+            .sum();
+
+        // Fetch actual readings for detailed view (calendar year only)
+        let (start, end) = Self::calendar_year_date_range_only(year);
         let mut readings = self
             .reading_repo
             .find_by_date_range(station_id, start, end)
             .await?;
 
-        // Sort and calculate (business logic)
-        readings.sort_by_key(|r| r.reading_datetime);
-        let monthly_summaries = Self::calculate_monthly_summaries(&readings);
-        let year_to_date_rainfall = monthly_summaries
-            .iter()
-            .rev()
-            .find(|m| m.readings_count > 0)
-            .map(|m| m.cumulative_ytd_inches)
-            .unwrap_or(0.0);
+        // Convert database monthly summaries to API format with cumulative YTD
+        let monthly_summaries = Self::build_monthly_summaries(&monthly_summaries_db);
 
-        readings.reverse(); // Back to desc for API
+        readings.reverse(); // Desc for API
 
         Ok(CalendarYearSummary {
             calendar_year: year,
@@ -100,7 +121,7 @@ impl ReadingService {
         (start_dt, end_dt)
     }
 
-    fn calendar_year_date_range(year: i32) -> (DateTime<Utc>, DateTime<Utc>) {
+    fn calendar_year_date_range_only(year: i32) -> (DateTime<Utc>, DateTime<Utc>) {
         let start_date = NaiveDate::from_ymd_opt(year, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -116,67 +137,31 @@ impl ReadingService {
         (start_dt, end_dt)
     }
 
-    fn calculate_total_rainfall(readings: &[Reading]) -> f64 {
-        readings.iter().map(|r| r.incremental_inches).sum()
-    }
-
-    fn calculate_monthly_summaries(readings: &[Reading]) -> Vec<MonthlySummary> {
-        // Group readings by month
-        let mut monthly_data: HashMap<u32, Vec<&Reading>> = HashMap::new();
-        for reading in readings {
-            let month = reading.reading_datetime.month();
-            monthly_data.entry(month).or_default().push(reading);
-        }
-
-        // Find the last reading in September (end of previous water year) to get baseline for Oct-Dec
-        let sept_final_cumulative = if let Some(sept_readings) = monthly_data.get(&9) {
-            // Get the latest reading in September
-            sept_readings
-                .iter()
-                .max_by_key(|r| r.reading_datetime)
-                .map(|r| r.cumulative_inches)
-                .unwrap_or(0.0)
-        } else {
-            0.0
-        };
-
-        // Calculate monthly summaries with cumulative values
+    fn build_monthly_summaries(
+        monthly_summaries_db: &[crate::db::MonthlyRainfallSummary],
+    ) -> Vec<MonthlySummary> {
         let mut summaries = Vec::new();
-        let mut cumulative_jan_sept = 0.0; // Accumulator for Jan-Sept (water year portion in calendar year)
-        let mut cumulative_oct_dec = 0.0; // Accumulator for Oct-Dec (new water year)
+        let mut cumulative_ytd = 0.0;
+
+        // Create a map for quick lookup
+        let db_map: HashMap<i32, &crate::db::MonthlyRainfallSummary> =
+            monthly_summaries_db.iter().map(|s| (s.month, s)).collect();
 
         for month in 1..=12 {
-            if let Some(month_readings) = monthly_data.get(&month) {
-                let month_rainfall: f64 = month_readings.iter().map(|r| r.incremental_inches).sum();
-
-                let cumulative_ytd = if month >= 10 {
-                    // Oct-Dec: add previous water year total (Sept final) + new water year accumulation
-                    cumulative_oct_dec += month_rainfall;
-                    sept_final_cumulative + cumulative_oct_dec
-                } else {
-                    // Jan-Sept: normal accumulation within current water year
-                    cumulative_jan_sept += month_rainfall;
-                    cumulative_jan_sept
-                };
-
+            if let Some(db_summary) = db_map.get(&month) {
+                cumulative_ytd += db_summary.total_rainfall_inches;
                 summaries.push(MonthlySummary {
-                    month,
-                    month_name: Self::get_month_name(month),
-                    readings_count: month_readings.len(),
-                    monthly_rainfall_inches: month_rainfall,
+                    month: month as u32,
+                    month_name: Self::get_month_name(month as u32),
+                    readings_count: db_summary.reading_count as usize,
+                    monthly_rainfall_inches: db_summary.total_rainfall_inches,
                     cumulative_ytd_inches: cumulative_ytd,
                 });
             } else {
-                // Month with no readings - still show it with zeros but maintain cumulative
-                let cumulative_ytd = if month >= 10 {
-                    sept_final_cumulative + cumulative_oct_dec
-                } else {
-                    cumulative_jan_sept
-                };
-
+                // Month with no data - rainfall is 0, but maintain cumulative
                 summaries.push(MonthlySummary {
-                    month,
-                    month_name: Self::get_month_name(month),
+                    month: month as u32,
+                    month_name: Self::get_month_name(month as u32),
                     readings_count: 0,
                     monthly_rainfall_inches: 0.0,
                     cumulative_ytd_inches: cumulative_ytd,

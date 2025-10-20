@@ -30,6 +30,9 @@ tower-http = { version = "0.5", features = ["trace"] }
 dotenvy = "0.15"
 thiserror = "1"
 utoipa = { version = "4.2", features = ["axum_extras", "chrono"] }
+# Excel parsing for gauge metadata (lat/lon) from FOPR files
+# Pure Rust, works with spawn_blocking(), actively maintained
+calamine = { version = "0.31", features = ["dates"] }
 
 [dev-dependencies]
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "chrono"] }

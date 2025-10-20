@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, reading_datetime, cumulative_inches as \"cumulative_inches!\",\n                   incremental_inches as \"incremental_inches!\", station_id, created_at\n            FROM rain_readings\n            WHERE station_id = $1 AND reading_datetime >= $2 AND reading_datetime < $3\n            ORDER BY reading_datetime ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "reading_datetime",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "cumulative_inches!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 3,
+        "name": "incremental_inches!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 4,
+        "name": "station_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dad9f54664cf5680964fcd20937001f8cb5c120f33066f54c70112b16aed8c2a"
+}

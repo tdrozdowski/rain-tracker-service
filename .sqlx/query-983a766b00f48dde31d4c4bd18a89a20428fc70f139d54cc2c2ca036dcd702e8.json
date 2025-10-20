@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO monthly_rainfall_summary\n                (station_id, year, month, total_rainfall_inches, reading_count,\n                 first_reading_date, last_reading_date, min_cumulative_inches, max_cumulative_inches)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            ON CONFLICT (station_id, year, month)\n            DO UPDATE SET\n                total_rainfall_inches = EXCLUDED.total_rainfall_inches,\n                reading_count = EXCLUDED.reading_count,\n                first_reading_date = EXCLUDED.first_reading_date,\n                last_reading_date = EXCLUDED.last_reading_date,\n                min_cumulative_inches = EXCLUDED.min_cumulative_inches,\n                max_cumulative_inches = EXCLUDED.max_cumulative_inches,\n                updated_at = NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Int4",
+        "Int4",
+        "Float8",
+        "Int4",
+        "Timestamptz",
+        "Timestamptz",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "983a766b00f48dde31d4c4bd18a89a20428fc70f139d54cc2c2ca036dcd702e8"
+}

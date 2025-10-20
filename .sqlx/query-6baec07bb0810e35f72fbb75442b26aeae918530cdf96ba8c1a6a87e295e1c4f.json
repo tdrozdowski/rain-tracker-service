@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, station_id, year, month, total_rainfall_inches, reading_count,\n                   first_reading_date, last_reading_date, min_cumulative_inches, max_cumulative_inches,\n                   created_at, updated_at\n            FROM monthly_rainfall_summary\n            WHERE station_id = $1 AND year = $2\n            ORDER BY month ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "station_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "month",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "total_rainfall_inches",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "reading_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "first_reading_date",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_reading_date",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "min_cumulative_inches",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "max_cumulative_inches",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "6baec07bb0810e35f72fbb75442b26aeae918530cdf96ba8c1a6a87e295e1c4f"
+}
