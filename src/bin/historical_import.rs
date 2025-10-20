@@ -1,7 +1,10 @@
+use chrono::Datelike;
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
+use rain_tracker_service::db::MonthlyRainfallRepository;
 use rain_tracker_service::importers::ExcelImporter;
 use sqlx::postgres::PgPoolOptions;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use tracing::{error, info};
 
@@ -156,6 +159,9 @@ async fn import_excel(
     let mut inserted = 0;
     let mut duplicates = 0;
 
+    // Track which (station_id, year, month) combinations we inserted data for
+    let mut months_to_recalculate: HashSet<(String, i32, u32)> = HashSet::new();
+
     for reading in readings {
         let result = sqlx::query!(
             r#"
@@ -173,6 +179,10 @@ async fn import_excel(
 
         if result.rows_affected() > 0 {
             inserted += 1;
+            // Track this month for recalculation
+            let year = reading.reading_date.year();
+            let month = reading.reading_date.month();
+            months_to_recalculate.insert((reading.station_id.clone(), year, month));
         } else {
             duplicates += 1;
         }
@@ -185,6 +195,34 @@ async fn import_excel(
     ));
 
     info!("Import summary: {inserted} inserted, {duplicates} duplicates");
+
+    // Recalculate monthly summaries for affected months
+    if !months_to_recalculate.is_empty() {
+        info!(
+            "Recalculating monthly summaries for {} station-months...",
+            months_to_recalculate.len()
+        );
+
+        let pb = ProgressBar::new(months_to_recalculate.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} Recalculating...")
+                .unwrap()
+                .progress_chars("##-"),
+        );
+
+        let monthly_repo = MonthlyRainfallRepository::new(pool.clone());
+
+        for (station_id, year, month) in months_to_recalculate {
+            monthly_repo
+                .recalculate_monthly_summary(&station_id, year, month as i32)
+                .await?;
+            pb.inc(1);
+        }
+
+        pb.finish_with_message("✓ Monthly summaries recalculated");
+        info!("Monthly summary recalculation complete");
+    }
 
     Ok(())
 }
