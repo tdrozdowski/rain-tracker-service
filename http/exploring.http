@@ -1,0 +1,2 @@
+### Get Rain Year Readings - 2023
+GET {{baseUrl}}/api/v1/readings/59700/water-year/2023

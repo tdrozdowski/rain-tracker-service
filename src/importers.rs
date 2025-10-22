@@ -3,4 +3,4 @@
 pub mod excel_importer;
 
 // Re-export commonly used items
-pub use excel_importer::ExcelImporter;
+pub use excel_importer::{ExcelImporter, HistoricalReading};

@@ -1,11 +1,12 @@
-use chrono::Datelike;
+use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
 use rain_tracker_service::db::MonthlyRainfallRepository;
-use rain_tracker_service::importers::ExcelImporter;
+use rain_tracker_service::importers::{ExcelImporter, HistoricalReading};
 use sqlx::postgres::PgPoolOptions;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::time::Instant;
 use tracing::{error, info};
 
 #[derive(Parser)]
@@ -51,6 +52,62 @@ enum Commands {
         #[arg(short, long)]
         year: i32,
     },
+}
+
+/// Reading with calculated cumulative value
+#[derive(Debug, Clone)]
+struct ReadingWithCumulative {
+    station_id: String,
+    reading_date: NaiveDate,
+    incremental_inches: f64,
+    cumulative_inches: f64,
+}
+
+/// Calculate cumulative rainfall values for each station
+/// Cumulative is the running total from the start of the water year (Oct 1)
+fn calculate_cumulative_values(
+    readings: Vec<HistoricalReading>,
+    water_year: i32,
+) -> Vec<ReadingWithCumulative> {
+    // Group readings by station_id
+    let mut by_station: HashMap<String, Vec<HistoricalReading>> = HashMap::new();
+    for reading in readings {
+        by_station
+            .entry(reading.station_id.clone())
+            .or_default()
+            .push(reading);
+    }
+
+    let mut result = Vec::new();
+
+    // Process each station independently
+    for (station_id, mut station_readings) in by_station {
+        // Sort by date (chronological order)
+        station_readings.sort_by_key(|r| r.reading_date);
+
+        // Calculate cumulative totals
+        let mut cumulative = 0.0;
+        let water_year_start = NaiveDate::from_ymd_opt(water_year - 1, 10, 1).unwrap();
+
+        for reading in station_readings {
+            // Reset cumulative if we've crossed into a new water year
+            if reading.reading_date < water_year_start {
+                // This shouldn't happen if we're importing a single water year
+                cumulative = 0.0;
+            }
+
+            cumulative += reading.rainfall_inches;
+
+            result.push(ReadingWithCumulative {
+                station_id: station_id.clone(),
+                reading_date: reading.reading_date,
+                incremental_inches: reading.rainfall_inches,
+                cumulative_inches: cumulative,
+            });
+        }
+    }
+
+    result
 }
 
 #[tokio::main]
@@ -99,6 +156,8 @@ async fn import_excel(
     water_year: i32,
     skip_confirmation: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let start_time = Instant::now();
+
     info!("Importing Excel file: {file:?}");
     info!("Water year: {water_year}");
 
@@ -127,6 +186,7 @@ async fn import_excel(
     }
 
     // Parse Excel file (blocking operation)
+    let parse_start = Instant::now();
     let file_str = file.to_string_lossy().to_string();
     let pb = ProgressBar::new_spinner();
     pb.set_style(
@@ -143,11 +203,19 @@ async fn import_excel(
     .await??;
 
     let readings_len = readings.len();
+    let parse_duration = parse_start.elapsed();
     pb.finish_with_message(format!("✓ Parsed {readings_len} readings"));
 
+    // Calculate cumulative values for each station
+    info!("Calculating cumulative rainfall values...");
+    let calc_start = Instant::now();
+    let readings_with_cumulative = calculate_cumulative_values(readings, water_year);
+    let calc_duration = calc_start.elapsed();
+
     // Insert readings into database
+    let insert_start = Instant::now();
     info!("Inserting {readings_len} readings into database...");
-    let pb = ProgressBar::new(readings.len() as u64);
+    let pb = ProgressBar::new(readings_with_cumulative.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")
@@ -162,16 +230,17 @@ async fn import_excel(
     // Track which (station_id, year, month) combinations we inserted data for
     let mut months_to_recalculate: HashSet<(String, i32, u32)> = HashSet::new();
 
-    for reading in readings {
+    for reading in readings_with_cumulative {
         let result = sqlx::query!(
             r#"
             INSERT INTO rain_readings (station_id, reading_datetime, cumulative_inches, incremental_inches, data_source)
-            VALUES ($1, $2::date, 0.0, $3, $4)
+            VALUES ($1, $2::date, $3, $4, $5)
             ON CONFLICT (reading_datetime, station_id) DO NOTHING
             "#,
             reading.station_id,
             reading.reading_date,
-            reading.rainfall_inches,
+            reading.cumulative_inches,
+            reading.incremental_inches,
             data_source
         )
         .execute(pool)
@@ -190,6 +259,7 @@ async fn import_excel(
         pb.inc(1);
     }
 
+    let insert_duration = insert_start.elapsed();
     pb.finish_with_message(format!(
         "✓ Inserted {inserted} new readings, {duplicates} duplicates skipped"
     ));
@@ -197,13 +267,15 @@ async fn import_excel(
     info!("Import summary: {inserted} inserted, {duplicates} duplicates");
 
     // Recalculate monthly summaries for affected months
-    if !months_to_recalculate.is_empty() {
+    let months_count = months_to_recalculate.len();
+    let recalc_duration = if !months_to_recalculate.is_empty() {
+        let recalc_start = Instant::now();
         info!(
             "Recalculating monthly summaries for {} station-months...",
-            months_to_recalculate.len()
+            months_count
         );
 
-        let pb = ProgressBar::new(months_to_recalculate.len() as u64);
+        let pb = ProgressBar::new(months_count as u64);
         pb.set_style(
             ProgressStyle::default_bar()
                 .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} Recalculating...")
@@ -220,9 +292,40 @@ async fn import_excel(
             pb.inc(1);
         }
 
+        let duration = recalc_start.elapsed();
         pb.finish_with_message("✓ Monthly summaries recalculated");
         info!("Monthly summary recalculation complete");
+        duration
+    } else {
+        std::time::Duration::from_secs(0)
+    };
+
+    let total_duration = start_time.elapsed();
+
+    // Print performance summary
+    println!("\n{}", "=".repeat(60));
+    println!("Import Summary");
+    println!("{}", "=".repeat(60));
+    println!("Water Year:         {water_year}");
+    println!("Total Readings:     {readings_len}");
+    println!("Inserted:           {inserted}");
+    println!("Duplicates:         {duplicates}");
+    println!("Station-Months:     {months_count}");
+    println!("{}", "-".repeat(60));
+    println!("Parse Time:         {:.2}s", parse_duration.as_secs_f64());
+    println!("Calculation Time:   {:.2}s", calc_duration.as_secs_f64());
+    println!("Insert Time:        {:.2}s", insert_duration.as_secs_f64());
+    println!("Recalc Time:        {:.2}s", recalc_duration.as_secs_f64());
+    println!("{}", "-".repeat(60));
+    println!("Total Time:         {:.2}s", total_duration.as_secs_f64());
+    println!("{}", "=".repeat(60));
+
+    if inserted > 0 {
+        let rate = inserted as f64 / insert_duration.as_secs_f64();
+        println!("Insert Rate:        {rate:.0} readings/sec");
     }
+
+    println!();
 
     Ok(())
 }
