@@ -54,7 +54,7 @@ impl ReadingService {
         Ok(WaterYearSummary {
             water_year,
             total_readings: total_readings as usize,
-            total_rainfall_inches: total_rainfall,
+            total_rainfall_inches: Self::normalize_zero(total_rainfall),
             readings,
         })
     }
@@ -92,7 +92,7 @@ impl ReadingService {
         Ok(CalendarYearSummary {
             calendar_year: year,
             total_readings: readings.len(),
-            year_to_date_rainfall_inches: year_to_date_rainfall,
+            year_to_date_rainfall_inches: Self::normalize_zero(year_to_date_rainfall),
             monthly_summaries,
             readings,
         })
@@ -104,6 +104,15 @@ impl ReadingService {
     }
 
     // Business logic helpers (private)
+
+    /// Normalize -0.0 to 0.0 for cleaner API responses
+    fn normalize_zero(value: f64) -> f64 {
+        if value == 0.0 {
+            0.0 // Converts both 0.0 and -0.0 to 0.0
+        } else {
+            value
+        }
+    }
 
     fn water_year_date_range(water_year: i32) -> (DateTime<Utc>, DateTime<Utc>) {
         let start_date = NaiveDate::from_ymd_opt(water_year - 1, 10, 1)

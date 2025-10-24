@@ -23,12 +23,14 @@ pub enum ExcelImportError {
     InvalidDate(String),
 }
 
-/// Represents a single rainfall reading from the Excel file
+/// Represents a single rainfall reading from historical data files
 #[derive(Debug, Clone)]
 pub struct HistoricalReading {
     pub station_id: String,
     pub reading_date: NaiveDate,
     pub rainfall_inches: f64,
+    /// Optional footnote marker from PDF (e.g., "1", "2") indicating a data quality note
+    pub footnote_marker: Option<String>,
 }
 
 /// Parser for MCFCD Water Year Excel files (format: pcp_WY_YYYY.xlsx)
@@ -112,6 +114,7 @@ impl ExcelImporter {
                             station_id: station_id.clone(),
                             reading_date: date,
                             rainfall_inches: rainfall,
+                            footnote_marker: None, // Excel files don't have footnotes
                         });
                     }
                 }
