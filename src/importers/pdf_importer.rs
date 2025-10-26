@@ -63,8 +63,12 @@ impl PdfImporter {
         while i < lines.len() {
             let line = lines[i].trim();
 
-            // Look for gauge group headers like "G001: Rain Gage Group 01"
-            if line.starts_with("G0") && line.contains("Rain Gage Group") {
+            // Look for gauge group headers:
+            // - New format: "G001: Rain Gage Group 01"
+            // - Old format: "G001: Rain Gages 0770-4505"
+            if line.starts_with("G0")
+                && (line.contains("Rain Gage Group") || line.contains("Rain Gages"))
+            {
                 debug!("Found gauge group at line {}: {}", i, line);
 
                 // Look ahead for "Gage ID" header (might be a few lines ahead)
@@ -113,7 +117,9 @@ impl PdfImporter {
                                 i += 1; // Move past TOTALS
                                 break;
                             }
-                            if data_line.starts_with("G0") && data_line.contains("Rain Gage Group")
+                            if data_line.starts_with("G0")
+                                && (data_line.contains("Rain Gage Group")
+                                    || data_line.contains("Rain Gages"))
                             {
                                 debug!("Hit next gauge group at line {}, will process it next", i);
                                 // Don't increment i, let the outer loop process this gauge group
