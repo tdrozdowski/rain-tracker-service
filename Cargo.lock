@@ -1992,6 +1992,7 @@ dependencies = [
  "dotenvy",
  "indicatif",
  "pdf-extract",
+ "regex",
  "reqwest",
  "scraper",
  "serde",

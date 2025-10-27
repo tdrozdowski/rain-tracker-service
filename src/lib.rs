@@ -3,6 +3,7 @@ pub mod config;
 pub mod db;
 pub mod fetch_error;
 pub mod fetcher;
+pub mod fopr;
 pub mod gauge_list_fetcher;
 pub mod importers;
 pub mod scheduler;

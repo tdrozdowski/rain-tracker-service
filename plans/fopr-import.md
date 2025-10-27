@@ -2715,31 +2715,31 @@ Claude Code lets you have **multiple conversations open simultaneously**, each w
 
 **Example workflow:**
 ```bash
-# Terminal 1: Conversation A (Database tasks)
-$ claude-code --conversation "fopr-db-schema"
+# Browser Tab 1 (or IDE Panel 1): Database tasks
+Web: https://claude.ai/claude-code (Tab 1)
 > "Read plans/fopr-import.md sections on database schema"
 > [Claude reads only relevant sections: 30K tokens]
 > "Create the migration files"
 > [Generates files: 25K tokens]
 > Total: ~85K tokens (still has 115K budget left)
 
-# Terminal 2: Conversation B (K8s tasks) - RUNNING IN PARALLEL
-$ claude-code --conversation "fopr-k8s"
+# Browser Tab 2 (or IDE Panel 2): K8s tasks - RUNNING IN PARALLEL
+Web: https://claude.ai/claude-code (Tab 2 - new conversation)
 > "Read plans/fopr-import.md K8s section"
 > [Claude reads only K8s section: 20K tokens]
 > "Generate the 3 K8s manifests"
 > [Generates YAMLs: 18K tokens]
 > Total: ~58K tokens (still has 142K budget left)
 
-# Terminal 3: Conversation C (Implementation planning)
-$ claude-code --conversation "fopr-implementation"
+# Browser Tab 3 (or IDE Panel 3): Implementation planning
+Web: https://claude.ai/claude-code (Tab 3 - new conversation)
 > "Read plans/fopr-import.md and break down implementation phases"
 > [Claude reads plan: 70K tokens]
 > [Generates breakdown: 30K tokens]
 > Total: ~100K tokens
 
-# Later, switch back to Conversation A to continue DB work
-$ claude-code --conversation "fopr-db-schema"  # Resume existing conversation
+# Later, switch back to Tab 1 to continue DB work
+Switch to Browser Tab 1 (conversation context is preserved)
 > "Now help me verify the migration SQL syntax"
 > [No re-reading needed! Context already loaded]
 > [Validates SQL: 5K tokens]
@@ -2753,71 +2753,96 @@ $ claude-code --conversation "fopr-db-schema"  # Resume existing conversation
 - ✅ Resume conversations later without losing context
 - ✅ Better organization (each conversation is topic-focused)
 
-### How to Use Multi-Conversation Workflow
+### How to Use Multi-Conversation Workflow in Claude Code
 
-**In Claude Code CLI:**
-```bash
-# Create named conversations
-claude-code --conversation "fopr-db"        # For database work
-claude-code --conversation "fopr-k8s"       # For Kubernetes work
-claude-code --conversation "fopr-testing"   # For test planning
+**⚠️ Important: Claude Code CLI does NOT have `--conversation` flags**
 
-# List active conversations
-claude-code --list-conversations
+The multi-conversation workflow depends on how you're using Claude Code:
 
-# Resume a specific conversation
-claude-code --conversation "fopr-db"
+#### Option 1: Web Interface (claude.ai/claude-code)
+- Each browser tab = separate conversation
+- Open multiple tabs, each with its own context
+- Browser tab history lets you resume conversations
+- **Recommended approach:**
+  ```bash
+  # Open 3 browser tabs
+  Tab 1: "FOPR Database Tasks" (bookmark for easy return)
+  Tab 2: "FOPR Implementation" (bookmark for easy return)
+  Tab 3: "FOPR Testing" (bookmark for easy return)
+  ```
 
-# Delete a conversation when done
-claude-code --delete-conversation "fopr-db"
-```
+#### Option 2: IDE Extension (VS Code, Cursor, etc.)
+- Open multiple chat panels/windows in your IDE
+- Each panel is a separate conversation with independent 200K limit
+- **Recommended approach:**
+  ```
+  # In VS Code / Cursor
+  1. Open Claude Code panel #1 (Cmd+Shift+P → "Claude Code: New Chat")
+  2. Open Claude Code panel #2 (right-click → "Split Editor Right")
+  3. Open Claude Code panel #3 (right-click → "Split Editor Right")
 
-**In Claude Code GUI/IDE Extension:**
-- Open multiple chat panels/windows
-- Each panel is a separate conversation
-- Name them for easy identification
-- Switch between panels as needed
+  # Each panel maintains its own conversation context
+  ```
+
+#### Option 3: CLI (Sequential Only)
+- **Each `claude-code` session = one conversation**
+- When you exit, conversation context is lost
+- **NOT suitable for multi-conversation workflow**
+- Use for sequential tasks only:
+  ```bash
+  # Session 1
+  $ claude-code
+  > Task 1 + Task 2
+  > exit
+
+  # Session 2 (fresh context, must re-read plan)
+  $ claude-code
+  > Task 3 + Task 4
+  > exit
+  ```
+
+**Limitation**: CLI doesn't support named conversations or resuming previous sessions
 
 ### Cost-Saving Strategy with Multi-Conversation
 
 **Optimized approach:**
 
 ```bash
-# Conversation A: Schema + Metadata (shared database context)
-claude-code --conversation "fopr-database"
+# Browser Tab/Panel A: Schema + Metadata (shared database context)
+Open: https://claude.ai/claude-code (or IDE Panel 1)
 > Task 1: Database schema migration (85K tokens)
 > Task 2: Metadata extraction strategy (65K tokens)
 > Total: 150K tokens in one conversation
 
-# Conversation B: Code & Infrastructure (shared implementation context)
-claude-code --conversation "fopr-implementation"
+# Browser Tab/Panel B: Code & Infrastructure (shared implementation context)
+Open: https://claude.ai/claude-code (or IDE Panel 2 - NEW conversation)
 > Task 4: Implementation breakdown (100K tokens)
 > Task 6: K8s manifests (58K tokens)
 > Total: 158K tokens in one conversation
 
-# Conversation C: Validation & Testing (shared quality context)
-claude-code --conversation "fopr-validation"
+# Browser Tab/Panel C: Validation & Testing (shared quality context)
+Open: https://claude.ai/claude-code (or IDE Panel 3 - NEW conversation)
 > Task 3: Pipeline verification (62K tokens)
 > Task 5: Test environment (35K tokens)
 > Task 7: Plan review (105K tokens - this one's big!)
 > Total: 202K tokens - OOPS, TOO MUCH!
 
-# Split Conversation C into C1 and C2:
-# C1: Testing
+# Split Tab/Panel C into C1 and C2:
+# C1: Testing (Tab/Panel C)
 > Task 3: Pipeline verification (62K)
 > Task 5: Test environment (35K)
 > Total: 97K tokens
 
-# C2: Final review
+# C2: Final review (Tab/Panel D - NEW conversation)
 > Task 7: Plan review (105K tokens)
 > Total: 105K tokens
 ```
 
-**Final strategy: 4 conversations**
-1. **fopr-database** (150K): Tasks 1-2
-2. **fopr-implementation** (158K): Tasks 4 + 6
-3. **fopr-validation** (97K): Tasks 3 + 5
-4. **fopr-review** (105K): Task 7
+**Final strategy: 4 conversations (4 browser tabs or IDE panels)**
+1. **Tab/Panel 1 - Database** (150K): Tasks 1-2
+2. **Tab/Panel 2 - Implementation** (158K): Tasks 4 + 6
+3. **Tab/Panel 3 - Validation** (97K): Tasks 3 + 5
+4. **Tab/Panel 4 - Review** (105K): Task 7
 
 **Benefits of this approach:**
 - ✅ All tasks fit within 200K limits
@@ -2826,40 +2851,271 @@ claude-code --conversation "fopr-validation"
 - ✅ Saves ~90K tokens vs serial approach (no re-reading plan 3 times)
 - ✅ Better organized by domain (DB, code, testing, review)
 
+### Single-Panel IDE Workflow (RustRover, IntelliJ)
+
+**If you can only use ONE Claude Code panel** (e.g., RustRover with single panel, IDE limitations, or personal preference against browser/other IDEs):
+
+**IMPORTANT**: This approach requires sequential execution. You **cannot** run tasks in parallel with a single panel. Accept this constraint and plan accordingly.
+
+#### Option 1: Batched Sequential (Recommended - Minimize Restarts)
+
+Group tasks into 4 conversations, staying under 200K token limit each:
+
+```
+# Conversation 1: Database Foundation (150K tokens)
+RustRover Claude Code Panel:
+├─ Task 1: Database Schema - 85K tokens (30-45 min)
+└─ Task 2: Metadata Extraction - 65K tokens (45-60 min)
+→ TOTAL: 150K tokens (1.5 hours)
+→ CLOSE conversation when done
+
+# Conversation 2: Implementation & Infrastructure (158K tokens)
+RustRover Claude Code Panel (restart):
+├─ Task 4: Task Breakdown - 100K tokens (30-40 min)
+└─ Task 6: K8s Manifests - 58K tokens (20-30 min)
+→ TOTAL: 158K tokens (1 hour)
+→ CLOSE conversation when done
+
+# Conversation 3: Validation (97K tokens)
+RustRover Claude Code Panel (restart):
+├─ Task 3: Pipeline Verification - 62K tokens (20-30 min)
+└─ Task 5: Test Environment - 35K tokens (15-20 min)
+→ TOTAL: 97K tokens (45 min)
+→ CLOSE conversation when done
+
+# Conversation 4: Final Review (105K tokens)
+RustRover Claude Code Panel (restart):
+└─ Task 7: Plan Review - 105K tokens (15-20 min)
+→ TOTAL: 105K tokens (20 min)
+→ DONE
+```
+
+**Total Time: 3.5-4.5 hours** (all sequential, no parallelization possible)
+
+**How to restart conversation in RustRover:**
+1. Close current Claude Code panel or clear the chat
+2. Open new Claude Code panel (or start fresh in same panel)
+3. Begin with: "I'm continuing FOPR import work. Please read plans/fopr-import.md for context."
+
+#### Option 2: Aggressive Single Conversation (Higher Risk)
+
+Try to fit as much as possible into one conversation, accepting risk of hitting 200K limit:
+
+```
+# One Big Conversation (attempt to fit 3-4 tasks)
+RustRover Claude Code Panel:
+├─ Task 1: Database Schema - 85K
+├─ Task 2: Metadata Extraction - 65K
+└─ Task 4: Task Breakdown - 100K
+→ TOTAL: 250K tokens - WILL FAIL before Task 4 completes!
+```
+
+**Not recommended** - you'll hit the limit mid-task and lose work.
+
+#### Option 3: Pragmatic Web Browser Fallback
+
+**If pre-implementation planning only** (not actual coding), consider using browser just for these 7 tasks:
+
+- Open 4 browser tabs at https://claude.ai/claude-code
+- Complete all 7 tasks in 3-4 hours with parallelization
+- Return to RustRover for actual implementation work
+
+**Trade-off**: Sacrifice of IDE preference for 50% time savings (4 hours vs 2 hours) on planning phase only.
+
 ### Recommended Workflow for FOPR Project
 
 **Week 1: Pre-Implementation (3-4.5 hours)**
 
 ```bash
 # Monday AM (1.5 hrs): Database foundation
-claude-code --conversation "fopr-db-foundation"
+Browser Tab 1 or IDE Panel 1: "FOPR Database"
 ├─ Task 1: Create database migrations (30-45 min)
 └─ Task 2: Document metadata parsing (45-60 min)
 
 # Monday PM (1.5 hrs): Implementation planning (can run in parallel with testing setup!)
-claude-code --conversation "fopr-planning"
+Browser Tab 2 or IDE Panel 2: "FOPR Planning" (NEW conversation)
 └─ Task 4: Break down implementation phases (30-40 min)
 
 # Tuesday AM (1 hr): Testing & validation
-claude-code --conversation "fopr-testing"
+Browser Tab 3 or IDE Panel 3: "FOPR Testing" (NEW conversation)
 ├─ Task 3: Verify data pipeline (20-30 min)
 └─ Task 5: Setup test environment (15-20 min)
 
 # Tuesday PM (1 hr): Infrastructure & final review
-claude-code --conversation "fopr-infrastructure"
+Browser Tab 4 or IDE Panel 4: "FOPR Infrastructure" (NEW conversation)
 └─ Task 6: Create K8s manifests (20-30 min)
 
-claude-code --conversation "fopr-final-review"
+Browser Tab 5 or IDE Panel 5: "FOPR Review" (NEW conversation)
 └─ Task 7: Review and finalize plan (15-20 min)
 ```
 
-**Total conversations: 5** (could reduce to 4 by combining, but 5 gives more headroom)
+**Total conversations: 5 browser tabs/IDE panels** (could reduce to 4 by combining, but 5 gives more headroom)
+
+### Task Dependencies & Parallelization Strategy
+
+**Dependency Graph:**
+
+```
+START
+  │
+  ├─ Task 1: Database Schema (30-45 min) ◄── MUST COMPLETE FIRST
+  │     │
+  │     └──┬─────────────────────────────────┬────────────────┐
+  │        │                                 │                │
+  ├─────── Task 2: Metadata Extraction ──── Task 3: Pipeline ── Task 4: Task Breakdown
+  │        (45-60 min)                       (20-30 min)        (30-40 min)
+  │        CAN RUN IN PARALLEL ──────►       CAN RUN IN PARALLEL
+  │                                          │
+  ├─────── Task 5: Test Environment ────────┤
+  │        (15-20 min)                       │
+  │        CAN RUN IN PARALLEL ──────►       │
+  │                                          │
+  └─────── Task 6: K8s Manifests ───────────┘
+           (20-30 min)
+           CAN RUN IN PARALLEL ──────►
+
+           ↓ (Wait for all to complete)
+
+           Task 7: Plan Review (15-20 min) ◄── MUST BE LAST
+           │
+         DONE
+```
+
+**Parallel Execution Blocks:**
+
+**SEQUENTIAL (MUST DO FIRST):**
+- ✋ **Task 1: Database Schema** - All other tasks depend on this being complete
+
+**PARALLEL BLOCK (After Task 1 completes, run ALL of these concurrently):**
+- 🔄 **Task 2: Metadata Extraction** - Needs schema design from Task 1
+- 🔄 **Task 3: Pipeline Verification** - Independent review, no dependencies
+- 🔄 **Task 4: Task Breakdown** - Independent, reviews existing code
+- 🔄 **Task 5: Test Environment** - Needs migrations from Task 1 to run
+- 🔄 **Task 6: K8s Manifests** - Needs schema knowledge (DB secrets reference)
+
+**SEQUENTIAL (MUST DO LAST):**
+- ✋ **Task 7: Plan Review** - Reviews outputs from all previous tasks
+
+### Fastest Execution Schedule (Wall-Clock Time)
+
+**Option A: Maximum Parallelization (3 browser tabs or IDE panels)**
+
+```bash
+# PHASE 1: Sequential (45 min max)
+Tab/Panel 1: Open https://claude.ai/claude-code ("FOPR Database")
+├─ Task 1: Database Schema (30-45 min)
+└─ WAIT FOR COMPLETION before starting Phase 2
+
+# PHASE 2: Parallel (60 min max - limited by slowest task)
+Tab/Panel 1: Resume same conversation
+└─ Task 2: Metadata Extraction (45-60 min) ◄── SLOWEST
+
+Tab/Panel 2: Open NEW conversation ("FOPR Implementation")
+├─ Task 4: Task Breakdown (30-40 min)
+└─ Task 6: K8s Manifests (20-30 min)
+   Total: 50-70 min (run sequentially in same conversation)
+
+Tab/Panel 3: Open NEW conversation ("FOPR Testing")
+├─ Task 3: Pipeline Verification (20-30 min)
+└─ Task 5: Test Environment (15-20 min)
+   Total: 35-50 min (run sequentially in same conversation)
+
+# PHASE 3: Sequential (20 min max)
+Tab/Panel 4: Open NEW conversation ("FOPR Review")
+└─ Task 7: Plan Review (15-20 min)
+
+TOTAL WALL-CLOCK TIME: ~2 hours (vs 3.5-4.5 hours sequential)
+```
+
+**Option B: Conservative Parallelization (2 browser tabs/panels)**
+
+```bash
+# PHASE 1: Sequential
+Tab/Panel 1: Task 1 (30-45 min)
+
+# PHASE 2: Parallel
+Tab/Panel 1: Tasks 2, 3, 5 (80-110 min)
+Tab/Panel 2: Tasks 4, 6 (50-70 min)
+
+# PHASE 3: Sequential
+Tab/Panel 1: Task 7 (15-20 min)
+
+TOTAL WALL-CLOCK TIME: ~2.5 hours
+```
+
+**Option C: No Parallelization (1 browser tab/panel or CLI)**
+
+```bash
+# All tasks run sequentially in one conversation
+Tasks 1 → 2 → 3 → 4 → 5 → 6 → 7
+
+TOTAL WALL-CLOCK TIME: 3.5-4.5 hours
+
+NOTE: With CLI, you'd need to restart and re-read plan 2-3 times,
+adding ~90-180K wasted tokens and extra cost.
+```
+
+### Which Tasks Can DEFINITELY Run in Parallel?
+
+**✅ Safe to run concurrently (no conflicts):**
+
+| Terminal 1 | Terminal 2 | Terminal 3 |
+|------------|------------|------------|
+| Task 2: Metadata Extraction | Task 4: Task Breakdown | Task 3: Pipeline Verification |
+| (writes to plan doc) | (reviews code, creates breakdown) | (reviews plan) |
+| ↓ | ↓ | ↓ |
+| Updates: | Creates: | No file writes |
+| - `plans/fopr-import.md` | - New doc or section in plan | - Just analysis |
+
+**Why these are safe:**
+- **Task 2 & 4**: Write to different files/sections
+- **Task 3**: Read-only analysis
+- **Task 5**: Creates test scripts (no conflicts)
+- **Task 6**: Creates K8s YAML files (different directory)
+
+**⚠️ Potential conflict (same file):**
+- If Task 2 and Task 7 both edit `plans/fopr-import.md` simultaneously
+- **Solution**: Run Task 7 last (after all others complete)
+
+### Recommended: 3-Terminal Parallelization
+
+**Maximum efficiency, minimum risk:**
+
+```bash
+# Browser Tab/Panel 1 (longest running - 2 hrs total)
+Open: https://claude.ai/claude-code (Tab 1: "FOPR Database")
+1. Task 1: DB Schema (30-45 min) ──► BLOCKS others
+2. Task 2: Metadata (45-60 min) ──► Runs in parallel with Tabs 2 & 3
+
+# Browser Tab/Panel 2 (medium - 1.5 hrs total)
+Open: https://claude.ai/claude-code (Tab 2: "FOPR Implementation" - NEW)
+<wait for Task 1 to complete>
+3. Task 4: Breakdown (30-40 min) ──► Runs in parallel with Tabs 1 & 3
+4. Task 6: K8s (20-30 min)       ──► Runs in parallel with Tabs 1 & 3
+
+# Browser Tab/Panel 3 (shortest - 1 hr total)
+Open: https://claude.ai/claude-code (Tab 3: "FOPR Testing" - NEW)
+<wait for Task 1 to complete>
+5. Task 3: Pipeline (20-30 min) ──► Runs in parallel with Tabs 1 & 2
+6. Task 5: Test Env (15-20 min) ──► Runs in parallel with Tabs 1 & 2
+
+# Browser Tab/Panel 4 (final review)
+Open: https://claude.ai/claude-code (Tab 4: "FOPR Review" - NEW)
+<wait for Tasks 2-6 to complete>
+7. Task 7: Plan Review (15-20 min)
+
+TOTAL: ~2 hours wall-clock time
+SAVINGS: 1.5-2.5 hours vs sequential
+
+NOTE: If using IDE, open 4 Claude Code chat panels side-by-side
+```
 
 **Critical Path:**
 1. Database schema (30-45 min) - Must complete first
-2. Metadata extraction strategy (45-60 min) - Needed for parser design
-3. Kubernetes manifests (20-30 min) - Can proceed in parallel with other tasks
-4. All other tasks can proceed in parallel
+2. Metadata extraction strategy (45-60 min) - Longest task in parallel block
+3. Plan review (15-20 min) - Must complete last
+
+**Longest pole in the tent:** Metadata extraction (60 min) determines Phase 2 duration
 
 **Recommended Approach:**
 - **Session 1** (2 hrs): Complete tasks 1-2 (focus on schema/metadata)
