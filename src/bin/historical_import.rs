@@ -7,6 +7,7 @@ use rain_tracker_service::importers::{
     ExcelImporter, HistoricalReading, McfcdDownloader, PdfImporter,
 };
 use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -20,7 +21,7 @@ struct Cli {
     #[arg(long, env)]
     database_url: String,
 
-    /// Import mode: 'single' (download one year), 'bulk' (download range), 'excel' (local file), 'pdf' (local file), 'fopr' (local FOPR file), 'fopr-download' (download FOPR)
+    /// Import mode: 'single' (download one year), 'bulk' (download range), 'excel' (local file), 'pdf' (local file), 'fopr' (local FOPR file), 'fopr-download' (download FOPR), 'fopr-bulk' (bulk FOPR import)
     #[arg(long)]
     mode: String,
 
@@ -63,6 +64,18 @@ struct Cli {
     /// Directory to save downloaded files (default: /tmp)
     #[arg(long, default_value = "/tmp")]
     output_dir: String,
+
+    /// Path to file containing gauge IDs (one per line) for bulk FOPR import
+    #[arg(long)]
+    gauge_list: Option<PathBuf>,
+
+    /// Discover gauge IDs from a water year file for bulk import
+    #[arg(long)]
+    discover_gauges: Option<PathBuf>,
+
+    /// Number of parallel downloads (default: 5)
+    #[arg(long, default_value = "5")]
+    parallel: usize,
 }
 
 /// Reading with calculated cumulative value
@@ -194,9 +207,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             download_and_import_fopr(&pool, &station_id, cli.yes, cli.keep_files, &cli.output_dir)
                 .await?;
         }
+        "fopr-bulk" => {
+            bulk_fopr_import(
+                &pool,
+                cli.gauge_list,
+                cli.discover_gauges,
+                cli.yes,
+                cli.keep_files,
+                &cli.output_dir,
+                cli.parallel,
+            )
+            .await?;
+        }
         _ => {
             return Err(format!(
-                "Invalid mode '{}'. Valid modes: single, bulk, excel, pdf, fopr, fopr-download",
+                "Invalid mode '{}'. Valid modes: single, bulk, excel, pdf, fopr, fopr-download, fopr-bulk",
                 cli.mode
             )
             .into());
@@ -873,6 +898,241 @@ async fn download_and_import_fopr(
         "Total duration (including download): {:.2}s",
         total_duration.as_secs_f64()
     );
+
+    Ok(())
+}
+
+/// Discover gauge IDs from a water year Excel file
+fn discover_gauges_from_water_year(
+    path: &PathBuf,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    use calamine::{open_workbook, Data, Reader, Xlsx};
+    use std::collections::HashSet;
+    use std::fs::File;
+    use std::io::BufReader;
+
+    info!("Discovering gauge IDs from water year file: {path:?}");
+
+    let mut workbook: Xlsx<BufReader<File>> = open_workbook(path)?;
+    let range = workbook.worksheet_range("OCT")?;
+
+    let rows: Vec<_> = range.rows().collect();
+    if rows.len() < 3 {
+        return Err("Not enough rows in sheet".into());
+    }
+
+    // Row 3 (index 2): Gauge IDs in columns B onward
+    let gauge_row = &rows[2];
+    let mut gauge_ids = HashSet::new();
+
+    for cell in gauge_row.iter().skip(1) {
+        match cell {
+            Data::Int(id) => {
+                gauge_ids.insert(id.to_string());
+            }
+            Data::Float(id) => {
+                gauge_ids.insert((*id as i64).to_string());
+            }
+            Data::String(s) if s.parse::<i64>().is_ok() => {
+                gauge_ids.insert(s.clone());
+            }
+            _ => {}
+        }
+    }
+
+    let mut gauge_list: Vec<_> = gauge_ids.into_iter().collect();
+    gauge_list.sort();
+
+    info!("Discovered {} gauge IDs", gauge_list.len());
+    Ok(gauge_list)
+}
+
+/// Load gauge IDs from a text file (one per line)
+fn load_gauge_list(path: &PathBuf) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    info!("Loading gauge IDs from file: {path:?}");
+
+    let contents = std::fs::read_to_string(path)?;
+    let gauge_ids: Vec<String> = contents
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| line.to_string())
+        .collect();
+
+    info!("Loaded {} gauge IDs", gauge_ids.len());
+    Ok(gauge_ids)
+}
+
+/// Bulk FOPR import for multiple gauges
+async fn bulk_fopr_import(
+    pool: &PgPool,
+    gauge_list_file: Option<PathBuf>,
+    discover_from_file: Option<PathBuf>,
+    skip_confirmation: bool,
+    keep_files: bool,
+    output_dir: &str,
+    parallel_downloads: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let start_time = Instant::now();
+
+    // Determine gauge list source
+    let gauge_ids = if let Some(file) = discover_from_file {
+        discover_gauges_from_water_year(&file)?
+    } else if let Some(file) = gauge_list_file {
+        load_gauge_list(&file)?
+    } else {
+        return Err(
+            "Either --gauge-list or --discover-gauges must be provided for fopr-bulk mode".into(),
+        );
+    };
+
+    info!("Starting bulk FOPR import for {} gauges", gauge_ids.len());
+
+    // Confirmation prompt
+    if !skip_confirmation {
+        println!(
+            "\n⚠️  This will download and import FOPR files for {} gauges.",
+            gauge_ids.len()
+        );
+        println!("This will:");
+        println!("  - Download {} FOPR files (~400KB each)", gauge_ids.len());
+        println!("  - Extract gauge metadata and historical rainfall data");
+        println!("  - Insert data into the database");
+        println!(
+            "  - Take approximately {} minutes",
+            (gauge_ids.len() as f64 / 10.0).ceil()
+        );
+        println!("\nContinue? [y/N]: ");
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Import cancelled.");
+            return Ok(());
+        }
+    }
+
+    // Create output directory
+    std::fs::create_dir_all(output_dir)?;
+
+    // Track statistics
+    let mut total_gauges = 0;
+    let mut successful = 0;
+    let mut failed = Vec::new();
+
+    // Progress bar
+    let pb = ProgressBar::new(gauge_ids.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} gauges ({msg})")
+            .unwrap()
+            .progress_chars("##-"),
+    );
+
+    // Process gauges in parallel batches
+    use futures::stream::{self, StreamExt};
+
+    let results: Vec<_> = stream::iter(gauge_ids)
+        .map(|station_id| {
+            let pool = pool.clone();
+            let output_dir = output_dir.to_string();
+            async move {
+                let result =
+                    download_and_import_fopr_silent(&pool, &station_id, keep_files, &output_dir)
+                        .await;
+                (station_id, result)
+            }
+        })
+        .buffer_unordered(parallel_downloads)
+        .collect()
+        .await;
+
+    // Process results
+    for (station_id, result) in results {
+        total_gauges += 1;
+        match result {
+            Ok(_) => {
+                successful += 1;
+                pb.set_message(format!(
+                    "{} successful, {} failed",
+                    successful,
+                    failed.len()
+                ));
+            }
+            Err(e) => {
+                failed.push((station_id.clone(), e.to_string()));
+                pb.set_message(format!(
+                    "{} successful, {} failed",
+                    successful,
+                    failed.len()
+                ));
+            }
+        }
+        pb.inc(1);
+    }
+
+    pb.finish_with_message(format!(
+        "Complete: {} successful, {} failed",
+        successful,
+        failed.len()
+    ));
+
+    let total_duration = start_time.elapsed();
+
+    // Print summary
+    println!("\n============================================================");
+    println!("Bulk FOPR Import Summary");
+    println!("============================================================");
+    println!("Total Gauges:       {total_gauges}");
+    println!("Successful:         {successful}");
+    println!("Failed:             {}", failed.len());
+    println!("------------------------------------------------------------");
+    println!("Total Time:         {:.2}s", total_duration.as_secs_f64());
+    println!(
+        "Average per Gauge:  {:.2}s",
+        total_duration.as_secs_f64() / total_gauges as f64
+    );
+    println!("============================================================");
+
+    if !failed.is_empty() {
+        println!("\nFailed Gauges:");
+        for (station_id, error) in &failed {
+            println!("  {station_id}: {error}");
+        }
+    }
+
+    if !failed.is_empty() {
+        return Err(format!("{} gauges failed to import", failed.len()).into());
+    }
+
+    Ok(())
+}
+
+/// Silent version of download_and_import_fopr for parallel execution
+async fn download_and_import_fopr_silent(
+    pool: &PgPool,
+    station_id: &str,
+    keep_files: bool,
+    output_dir: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Download FOPR file
+    let downloader = McfcdDownloader::new();
+    let file_bytes = downloader.download_fopr(station_id).await?;
+
+    // Create output directory if it doesn't exist
+    std::fs::create_dir_all(output_dir)?;
+
+    // Save to temporary file
+    let temp_file = PathBuf::from(output_dir).join(format!("{station_id}_FOPR.xlsx"));
+    std::fs::write(&temp_file, &file_bytes)?;
+
+    // Import the file (silent mode)
+    import_fopr(pool, temp_file.clone(), station_id, true).await?;
+
+    // Clean up temp file unless --keep-files
+    if !keep_files {
+        std::fs::remove_file(&temp_file)?;
+    }
 
     Ok(())
 }

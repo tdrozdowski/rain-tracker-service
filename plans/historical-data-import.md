@@ -1,5 +1,108 @@
 # Historical Data Import Plan
 
+## Implementation Status
+
+### ✅ Completed (Phase 1: FOPR Import)
+
+**Date**: 2025-10-28
+
+1. **FOPR Import System** ✅
+   - Implemented FOPR (Full Operational Period of Record) Excel file parser
+   - Automatic gauge metadata extraction from `Meta_Stats` sheet
+   - Daily rainfall data parsing from year sheets (2024, 2023, 2022, etc.)
+   - Location: `src/fopr/` module
+     - `metadata_parser.rs` - Extracts gauge info (location, stats, etc.)
+     - `daily_data_parser.rs` - Parses daily rainfall from year sheets
+
+2. **Gauge Metadata Management** ✅
+   - Created `gauges` table (migration `20250106000000_create_gauges_table.sql`)
+   - Added foreign key constraints (migration `20250107000000_add_gauge_foreign_keys.sql`)
+   - Implemented `GaugeRepository::upsert_gauge_metadata()` - inserts/updates gauge records
+   - Implemented `GaugeRepository::gauge_exists()` - checks gauge existence
+   - Location: `src/db/gauge_repository.rs`
+
+3. **FOPR Import CLI** ✅
+   - Import from local file: `--mode fopr --file path.xlsx --station-id 59700`
+   - Download and import: `--mode fopr-download --station-id 59700`
+   - Automatic directory creation for downloads
+   - Progress bars and detailed logging
+   - Location: `src/bin/historical_import.rs`
+
+4. **Test Infrastructure** ✅
+   - Reusable test fixtures with automatic gauge setup
+   - Test database cleanup before migrations
+   - 5 integration tests passing
+   - Location: `tests/integration_test.rs`
+
+5. **Kustomize Job Infrastructure** ✅
+   - Base manifests for K8s jobs
+   - Overlays for dev/staging/production
+   - Helper scripts for running imports
+   - Location: `k8s/jobs/`, `scripts/`
+
+### 🚧 In Progress / Remaining Work
+
+**Phase 2: Water Year Excel Import (pcp_WY_YYYY.xlsx)**
+
+These are the MCFCD annual water year files (different format from FOPR):
+- File format: `pcp_WY_2023.xlsx`
+- Structure: 12 monthly sheets (OCT-SEP) + Annual_Totals
+- Contains ALL gauges (~350+) in single sheet
+- Daily rainfall values with ISO dates
+
+**Tasks:**
+1. ⏳ Implement `ExcelImporter` for water year files
+   - Parse monthly sheets (OCT through SEP)
+   - Extract gauge IDs from Row 3
+   - Parse daily data rows (reverse chronological)
+   - Handle 350+ gauge columns efficiently
+
+2. ⏳ Add CLI mode for water year import
+   - `--mode water-year --year 2023`
+   - `--mode water-year-download --year 2023`
+
+3. ⏳ Bulk import strategy
+   - Import multiple years at once
+   - `--mode bulk --start-year 2010 --end-year 2024`
+
+**Phase 3: PDF Import (Pre-2022 Data)**
+
+Monthly PDF files before MCFCD switched to Excel:
+- File format: `pcpMMYY.pdf` (e.g., `pcp1119.pdf` = November 2019)
+- Multi-page documents (~40+ pages)
+- Gauge groups (G001-G045), 8 gauges per page
+- Text-based extraction required
+
+**Tasks:**
+1. ⏳ Implement `PdfImporter`
+   - Multi-page iteration
+   - Gauge group detection
+   - Daily data extraction
+   - Footnote parsing
+
+2. ⏳ Add CLI mode for PDF import
+   - `--mode pdf --month 11 --year 2019`
+   - `--mode pdf-download --month 11 --year 2019`
+
+### 📋 Next Steps (Prioritized)
+
+**Immediate (Next Session):**
+1. Implement water year Excel parser (`src/importers/excel_importer.rs`)
+2. Add water year import modes to CLI
+3. Test with `plans/pcp_WY_2023.xlsx` sample file
+4. Document water year vs FOPR file differences
+
+**Short-term:**
+1. Implement PDF parser for pre-2022 data
+2. Add bulk import mode (all years at once)
+3. Create CronJob for annual water year imports (October 1)
+4. Add import status verification queries
+
+**Long-term:**
+1. Import dashboard/API endpoint
+2. Data reconciliation (compare live vs historical)
+3. Data quality reports and anomaly detection
+
 ## Overview
 
 This plan describes the implementation of a bulk import system for historical rain gauge data from the Maricopa County Flood Control District (MCFCD). The system will support two data formats based on the year cutoff:

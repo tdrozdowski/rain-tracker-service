@@ -48,6 +48,8 @@ indicatif = "0.17"
 pdf-extract = "0.10.0"
 # Regex for parsing metadata from FOPR files (gauge ID history, complete years count)
 regex = "1"
+# Async stream utilities for parallel bulk import
+futures = "0.3"
 
 [dev-dependencies]
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "chrono"] }

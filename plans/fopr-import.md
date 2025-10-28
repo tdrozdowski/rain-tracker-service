@@ -3280,3 +3280,120 @@ DATABASE_URL="postgres://..." \
 **Session Time:** ~2 hours
 
 **Result:** FOPR daily data import is fully implemented and ready to import historical rainfall data for gauges not covered by monthly PDFs.
+
+### ✅ Bulk FOPR Import - COMPLETE
+
+The bulk FOPR import functionality has been **successfully implemented** and is ready for production use.
+
+**What Was Implemented:**
+
+1. **Bulk Import Function** (`src/bin/historical_import.rs:965-1048`)
+   - Parallel bulk import for multiple gauges
+   - Configurable parallelism (default: 5 concurrent downloads)
+   - Progress tracking with indicatif
+   - Error collection and reporting
+   - Summary statistics
+
+2. **Gauge Discovery** (`src/bin/historical_import.rs:901-935`)
+   - `discover_gauges_from_water_year()` - Extracts gauge IDs from water year Excel files
+   - Reads OCT sheet, Row 3 (gauge ID header row)
+   - Handles multiple data types (Int, Float, String)
+   - Returns sorted, deduplicated list
+
+3. **Gauge List Loading** (`src/bin/historical_import.rs:937-962`)
+   - `load_gauge_list()` - Loads gauge IDs from text file (one per line)
+   - Trims whitespace, skips empty lines
+   - Returns sorted list
+
+4. **Silent Import** (`src/bin/historical_import.rs:1097-1137`)
+   - `download_and_import_fopr_silent()` - Silent version for parallel execution
+   - Downloads FOPR file
+   - Saves to temporary location
+   - Imports data
+   - Optionally deletes file after import
+
+5. **CLI Integration** (`src/bin/historical_import.rs:210-221`)
+   - **Mode: `fopr-bulk`** - Bulk FOPR import
+   - **Argument: `--gauge-list <FILE>`** - Path to file with gauge IDs (one per line)
+   - **Argument: `--discover-gauges <FILE>`** - Extract gauge IDs from water year Excel file
+   - **Argument: `--parallel <N>`** - Number of concurrent downloads (default: 5)
+   - Uses existing `--yes`, `--keep-files`, `--output-dir` arguments
+
+**Usage Examples:**
+
+```bash
+# Discover gauges from water year file and bulk import
+DATABASE_URL="postgres://..." \
+  ./historical-import \
+    --mode fopr-bulk \
+    --discover-gauges /tmp/pcp_WY_2023.xlsx \
+    --parallel 5 \
+    -y
+
+# Import from pre-existing gauge list
+DATABASE_URL="postgres://..." \
+  ./historical-import \
+    --mode fopr-bulk \
+    --gauge-list /tmp/gauge_ids.txt \
+    --parallel 10 \
+    --keep-files \
+    -y
+
+# Test with small sample
+echo -e "59700\n11000\n50258" > /tmp/test_gauges.txt
+DATABASE_URL="postgres://..." \
+  ./historical-import \
+    --mode fopr-bulk \
+    --gauge-list /tmp/test_gauges.txt \
+    --parallel 2 \
+    -y
+```
+
+**Test Results:**
+
+Tested with 3 gauges (59700, 11000, 50258):
+- ✅ **59700**: 744 readings imported (1998-2024)
+- ✅ **11000**: 689 readings imported (1994-2024)
+- ❌ **50258**: Failed (404 - FOPR file not available on server)
+
+**Performance Metrics:**
+- Total time: 1.37s for 3 gauges
+- Average per gauge: 0.46s
+- Parallel downloads: 2 concurrent
+- Error handling: Graceful failure with detailed error reporting
+
+**Implementation Summary:**
+
+| Component | Status | Location | Lines |
+|-----------|--------|----------|-------|
+| Bulk Import Function | ✅ Complete | `src/bin/historical_import.rs` | ~84 |
+| Gauge Discovery | ✅ Complete | `src/bin/historical_import.rs` | ~35 |
+| Gauge List Loader | ✅ Complete | `src/bin/historical_import.rs` | ~26 |
+| Silent Import | ✅ Complete | `src/bin/historical_import.rs` | ~41 |
+| CLI Mode `fopr-bulk` | ✅ Complete | `src/bin/historical_import.rs` | ~12 |
+| Dependency Added | ✅ Complete | `Cargo.toml` | `futures = "0.3"` |
+| Build Success | ✅ Verified | All binaries | - |
+| Integration Test | ✅ Passed | 3 gauge sample | - |
+
+**Features:**
+- ✅ Parallel downloads with configurable concurrency
+- ✅ Gauge discovery from water year Excel files
+- ✅ Gauge list loading from text files
+- ✅ Progress tracking with progress bars
+- ✅ Error collection and reporting
+- ✅ Summary statistics (successful/failed gauges, timing)
+- ✅ Automatic gauge metadata extraction and upsert
+- ✅ Graceful handling of missing FOPR files (404 errors)
+- ✅ Optional file retention with `--keep-files`
+
+**Next Steps (Future Work):**
+1. Production bulk import of all ~362 gauges
+2. Performance benchmarking with larger gauge sets
+3. Kubernetes CronJob for periodic re-import
+4. Monitoring and alerting for failed imports
+
+**Completion Date:** October 28, 2025
+
+**Session Time:** ~30 minutes
+
+**Result:** Bulk FOPR import is fully implemented and tested. Ready for production use to import historical data for all gauges in parallel.
