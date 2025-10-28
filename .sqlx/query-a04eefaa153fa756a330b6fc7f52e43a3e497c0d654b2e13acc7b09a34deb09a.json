@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT reading_datetime, incremental_inches, data_source\n        FROM rain_readings\n        WHERE station_id = $1\n        ORDER BY reading_datetime DESC\n        LIMIT 10\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reading_datetime",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "incremental_inches",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "data_source",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a04eefaa153fa756a330b6fc7f52e43a3e497c0d654b2e13acc7b09a34deb09a"
+}

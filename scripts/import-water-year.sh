@@ -8,7 +8,7 @@ WATER_YEAR=${1:-2023}
 
 echo "🚀 Starting import for water year $WATER_YEAR..."
 
-cat k8s/jobs/historical-single-year-import.yaml | \
+cat k8s/jobs/base/historical-single-year-import.yaml | \
   sed "s/value: \"2023\"/value: \"$WATER_YEAR\"/" | \
   kubectl create -f -
 

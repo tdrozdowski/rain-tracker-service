@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM rain_readings WHERE data_source = 'pdf_1119'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "5cdb5f5cfe9128eadae04dc5defb716547567c2c541d7ae5de1b0c1fc94bab9d"
+}

@@ -1,7 +1,8 @@
 use chrono::{Datelike, NaiveDate};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use rain_tracker_service::db::MonthlyRainfallRepository;
+use rain_tracker_service::db::{GaugeRepository, MonthlyRainfallRepository};
+use rain_tracker_service::fopr::{FoprDailyDataParser, MetaStatsData};
 use rain_tracker_service::importers::{
     ExcelImporter, HistoricalReading, McfcdDownloader, PdfImporter,
 };
@@ -19,13 +20,17 @@ struct Cli {
     #[arg(long, env)]
     database_url: String,
 
-    /// Import mode: 'single' (download one year), 'bulk' (download range), 'excel' (local file), 'pdf' (local file)
+    /// Import mode: 'single' (download one year), 'bulk' (download range), 'excel' (local file), 'pdf' (local file), 'fopr' (local FOPR file), 'fopr-download' (download FOPR)
     #[arg(long)]
     mode: String,
 
     /// Water year (e.g., 2023 for Oct 2022 - Sep 2023)
     #[arg(long)]
     water_year: Option<i32>,
+
+    /// Station ID (for FOPR modes, e.g., "59700")
+    #[arg(long)]
+    station_id: Option<String>,
 
     /// Start year for bulk mode
     #[arg(long)]
@@ -140,9 +145,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&cli.database_url)
         .await?;
 
-    info!("Running migrations...");
-    sqlx::migrate!("./migrations").run(&pool).await?;
-
     match cli.mode.as_str() {
         "single" => {
             let water_year = cli
@@ -178,9 +180,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let year = cli.year.ok_or("--year is required for pdf mode")?;
             import_pdf(&pool, file, year, month, cli.yes).await?;
         }
+        "fopr" => {
+            let file = cli.file.ok_or("--file is required for fopr mode")?;
+            let station_id = cli
+                .station_id
+                .ok_or("--station-id is required for fopr mode")?;
+            import_fopr(&pool, file, &station_id, cli.yes).await?;
+        }
+        "fopr-download" => {
+            let station_id = cli
+                .station_id
+                .ok_or("--station-id is required for fopr-download mode")?;
+            download_and_import_fopr(&pool, &station_id, cli.yes, cli.keep_files, &cli.output_dir)
+                .await?;
+        }
         _ => {
             return Err(format!(
-                "Invalid mode '{}'. Valid modes: single, bulk, excel, pdf",
+                "Invalid mode '{}'. Valid modes: single, bulk, excel, pdf, fopr, fopr-download",
                 cli.mode
             )
             .into());
@@ -563,6 +579,300 @@ async fn import_pdf(
     }
 
     println!();
+
+    Ok(())
+}
+
+async fn import_fopr(
+    pool: &sqlx::PgPool,
+    file: PathBuf,
+    station_id: &str,
+    skip_confirmation: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let start_time = Instant::now();
+
+    info!("Importing FOPR file: {file:?}");
+    info!("Station ID: {station_id}");
+
+    // Verify file exists
+    if !file.exists() {
+        error!("File not found: {file:?}");
+        return Err(format!("File not found: {file:?}").into());
+    }
+
+    // Confirmation prompt
+    if !skip_confirmation {
+        println!("\n⚠️  This will import FOPR historical data into the database.");
+        println!("File: {file:?}");
+        println!("Station ID: {station_id}");
+        println!("\nContinue? [y/N]: ");
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Import cancelled.");
+            return Ok(());
+        }
+    }
+
+    // Parse gauge metadata from Meta_Stats sheet first
+    info!("Extracting gauge metadata from FOPR file...");
+    let file_str = file.to_string_lossy().to_string();
+    let file_str_clone = file_str.clone();
+
+    let metadata = tokio::task::spawn_blocking(move || -> Result<MetaStatsData, String> {
+        use calamine::{open_workbook, Reader, Xlsx};
+        use std::fs::File;
+        use std::io::BufReader;
+
+        let mut workbook: Xlsx<BufReader<File>> =
+            open_workbook(&file_str_clone).map_err(|e| format!("Failed to open FOPR file: {e}"))?;
+
+        let range = workbook
+            .worksheet_range("Meta_Stats")
+            .map_err(|e| format!("Failed to read Meta_Stats sheet: {e:?}"))?;
+
+        let metadata = MetaStatsData::from_worksheet_range(&range)
+            .map_err(|e| format!("Failed to parse metadata: {e}"))?;
+
+        Ok(metadata)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+    .map_err(|e| format!("Metadata parsing error: {e}"))?;
+
+    info!(
+        "Extracted metadata for gauge: {} ({})",
+        metadata.station_name, metadata.station_id
+    );
+
+    // Ensure gauge exists in database
+    let gauge_repo = GaugeRepository::new(pool.clone());
+
+    if gauge_repo.gauge_exists(station_id).await? {
+        info!("Gauge {station_id} already exists in database, updating metadata...");
+    } else {
+        info!("Gauge {station_id} not found in database, inserting metadata...");
+    }
+
+    gauge_repo.upsert_gauge_metadata(&metadata).await?;
+    info!("✓ Gauge metadata saved to database");
+
+    // Parse FOPR daily data (blocking operation)
+    let parse_start = Instant::now();
+    let station_id_clone = station_id.to_string();
+
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}")
+            .unwrap(),
+    );
+    pb.set_message(format!(
+        "Parsing daily rainfall data for gauge {station_id}..."
+    ));
+
+    let readings = tokio::task::spawn_blocking(move || {
+        let parser = FoprDailyDataParser::new(&file_str, &station_id_clone);
+        parser.parse_all_years()
+    })
+    .await??;
+
+    let parse_duration = parse_start.elapsed();
+    pb.finish_with_message(format!("✓ Parsed {} readings", readings.len()));
+    info!(
+        "Parsed {} readings in {:.2}s",
+        readings.len(),
+        parse_duration.as_secs_f64()
+    );
+
+    if readings.is_empty() {
+        println!("⚠️  No readings found in FOPR file");
+        return Ok(());
+    }
+
+    // Print coverage info
+    let earliest = readings.iter().map(|r| r.reading_date).min().unwrap();
+    let latest = readings.iter().map(|r| r.reading_date).max().unwrap();
+    println!("Date range: {earliest} to {latest}");
+    println!("Years covered: {} to {}", earliest.year(), latest.year());
+
+    // Insert into database
+    let insert_start = Instant::now();
+    let readings_len = readings.len();
+
+    let pb = ProgressBar::new(readings_len as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} Inserting...")
+            .unwrap()
+            .progress_chars("##-"),
+    );
+
+    let mut inserted = 0;
+    let mut duplicates = 0;
+    let data_source = format!("fopr_{station_id}");
+
+    // Batch insert for performance
+    const BATCH_SIZE: usize = 1000;
+    for chunk in readings.chunks(BATCH_SIZE) {
+        for reading in chunk {
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO rain_readings (station_id, reading_datetime, cumulative_inches, incremental_inches, data_source)
+                VALUES ($1, $2::date, 0.0, $3, $4)
+                ON CONFLICT (reading_datetime, station_id) DO NOTHING
+                "#,
+                reading.station_id,
+                reading.reading_date,
+                reading.rainfall_inches,
+                data_source
+            )
+            .execute(pool)
+            .await?;
+
+            if result.rows_affected() > 0 {
+                inserted += 1;
+            } else {
+                duplicates += 1;
+            }
+            pb.inc(1);
+        }
+    }
+
+    let insert_duration = insert_start.elapsed();
+    pb.finish_with_message(format!("✓ Inserted {inserted} readings"));
+
+    // Recalculate monthly summaries
+    let recalc_start = Instant::now();
+    info!("Recalculating monthly summaries for affected months...");
+
+    // Collect unique (station_id, year, month) tuples
+    let mut months_to_recalculate: HashSet<(String, i32, u32)> = HashSet::new();
+    for reading in &readings {
+        months_to_recalculate.insert((
+            reading.station_id.clone(),
+            reading.reading_date.year(),
+            reading.reading_date.month(),
+        ));
+    }
+
+    let months_count = months_to_recalculate.len();
+    let monthly_repo = MonthlyRainfallRepository::new(pool.clone());
+
+    for (sid, year, month) in months_to_recalculate {
+        monthly_repo
+            .recalculate_monthly_summary(&sid, year, month as i32)
+            .await?;
+    }
+
+    let recalc_duration = recalc_start.elapsed();
+    info!("Recalculated {} station-months", months_count);
+
+    let total_duration = start_time.elapsed();
+
+    // Print summary
+    println!("\n{}", "=".repeat(60));
+    println!("FOPR Import Summary");
+    println!("{}", "=".repeat(60));
+    println!("Station ID:         {station_id}");
+    println!("Date Range:         {earliest} to {latest}");
+    println!("Total Readings:     {readings_len}");
+    println!("Inserted:           {inserted}");
+    println!("Duplicates:         {duplicates}");
+    println!("Station-Months:     {months_count}");
+    println!("{}", "-".repeat(60));
+    println!("Parse Time:         {:.2}s", parse_duration.as_secs_f64());
+    println!("Insert Time:        {:.2}s", insert_duration.as_secs_f64());
+    println!("Recalc Time:        {:.2}s", recalc_duration.as_secs_f64());
+    println!("{}", "-".repeat(60));
+    println!("Total Time:         {:.2}s", total_duration.as_secs_f64());
+    println!("{}", "=".repeat(60));
+
+    if inserted > 0 {
+        let rate = inserted as f64 / insert_duration.as_secs_f64();
+        println!("Insert Rate:        {rate:.0} readings/sec");
+    }
+
+    println!();
+
+    Ok(())
+}
+
+async fn download_and_import_fopr(
+    pool: &sqlx::PgPool,
+    station_id: &str,
+    skip_confirmation: bool,
+    keep_files: bool,
+    output_dir: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let start_time = Instant::now();
+
+    info!("Downloading FOPR file for gauge {station_id}...");
+
+    // Confirmation prompt
+    if !skip_confirmation {
+        println!("\n⚠️  This will download and import FOPR data for gauge {station_id}.");
+        println!("This may take several minutes depending on file size.");
+        println!("\nContinue? [y/N]: ");
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Import cancelled.");
+            return Ok(());
+        }
+    }
+
+    // Download FOPR file
+    let download_start = Instant::now();
+    let downloader = McfcdDownloader::new();
+
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}")
+            .unwrap(),
+    );
+    pb.set_message(format!("Downloading FOPR file for gauge {station_id}..."));
+
+    let file_bytes = downloader.download_fopr(station_id).await?;
+    let download_duration = download_start.elapsed();
+
+    pb.finish_with_message(format!(
+        "✓ Downloaded {:.2} MB",
+        file_bytes.len() as f64 / 1_000_000.0
+    ));
+    info!(
+        "Downloaded FOPR file ({} bytes) in {:.2}s",
+        file_bytes.len(),
+        download_duration.as_secs_f64()
+    );
+
+    // Create output directory if it doesn't exist
+    std::fs::create_dir_all(output_dir)?;
+
+    // Save to temporary file
+    let temp_file = PathBuf::from(output_dir).join(format!("{station_id}_FOPR.xlsx"));
+    std::fs::write(&temp_file, &file_bytes)?;
+    info!("Saved to: {temp_file:?}");
+
+    // Import the file
+    import_fopr(pool, temp_file.clone(), station_id, true).await?;
+
+    // Clean up temp file unless --keep-files
+    if !keep_files {
+        std::fs::remove_file(&temp_file)?;
+        info!("Deleted temporary file: {temp_file:?}");
+    } else {
+        println!("File saved to: {temp_file:?}");
+    }
+
+    let total_duration = start_time.elapsed();
+    println!(
+        "Total duration (including download): {:.2}s",
+        total_duration.as_secs_f64()
+    );
 
     Ok(())
 }

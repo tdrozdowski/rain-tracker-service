@@ -89,6 +89,19 @@ impl McfcdDownloader {
         Ok(results)
     }
 
+    /// Download FOPR (Full Operational Period of Record) file for a specific gauge
+    /// Example: gauge_id="59700" downloads 59700_FOPR.xlsx
+    ///
+    /// FOPR files contain complete historical data for a single gauge.
+    /// URL pattern: https://alert.fcd.maricopa.gov/alert/Rain/FOPR/{gauge_id}_FOPR.xlsx
+    pub async fn download_fopr(&self, gauge_id: &str) -> Result<Vec<u8>, DownloadError> {
+        let filename = format!("{gauge_id}_FOPR.xlsx");
+        let url = format!("{}FOPR/{}", self.base_url, filename);
+
+        info!("Downloading FOPR file for gauge {}: {}", gauge_id, url);
+        self.download_file(&url, &filename).await
+    }
+
     /// Internal helper to download a file from a URL
     async fn download_file(&self, url: &str, filename: &str) -> Result<Vec<u8>, DownloadError> {
         let response = self.client.get(url).send().await?;

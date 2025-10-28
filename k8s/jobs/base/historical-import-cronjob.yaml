@@ -1,0 +1,286 @@
+# Historical Data Import CronJob
+# This CronJob periodically imports the most recent water year data
+# to keep historical data up-to-date as new daily readings become available
+#
+# Schedule: Runs daily at 3 AM UTC (perfect for nightly updates)
+# Usage: kubectl apply -f k8s/jobs/historical-import-cronjob.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: historical-import-current-year
+  namespace: rain-tracker
+  labels:
+    app: rain-tracker
+    job-type: historical-import-cron
+spec:
+  # Run daily at 3:00 AM UTC
+  # Adjust to your preferred schedule: https://crontab.guru/
+  schedule: "0 3 * * *"
+
+  # Keep last 3 successful jobs and last 1 failed job for debugging
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+
+  # Don't allow concurrent runs (wait for previous job to finish)
+  concurrencyPolicy: Forbid
+
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400  # Clean up after 24 hours
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: rain-tracker
+            job-type: historical-import-cron
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: importer
+            image: ghcr.io/your-org/rain-tracker-service:latest
+            command: ["/bin/bash", "-c"]
+            args:
+              - |
+                set -e
+
+                # Determine current water year
+                # Water year runs Oct 1 (year-1) to Sep 30 (year)
+                CURRENT_MONTH=$(date +%m)
+                CURRENT_YEAR=$(date +%Y)
+
+                if [ "$CURRENT_MONTH" -ge 10 ]; then
+                  # Oct-Dec: we're in the early part of water year YYYY+1
+                  WATER_YEAR=$((CURRENT_YEAR + 1))
+                else
+                  # Jan-Sep: we're in the late part of water year YYYY
+                  WATER_YEAR=$CURRENT_YEAR
+                fi
+
+                echo "🚀 Daily historical import for current water year"
+                echo "Current date: $(date)"
+                echo "Current water year: $WATER_YEAR"
+                echo ""
+
+                # Import current water year to pick up any new data
+                /app/historical-import \
+                  --database-url "$DATABASE_URL" \
+                  single \
+                  --water-year "$WATER_YEAR"
+
+                echo ""
+                echo "✅ Import complete for water year $WATER_YEAR"
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-secrets
+                  key: DATABASE_URL
+            - name: RUST_LOG
+              value: "info"
+            - name: MCFCD_BASE_URL
+              value: "https://alert.fcd.maricopa.gov/alert/Rain/"
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "250m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+---
+# Alternative CronJob: Import last 2 water years
+# Useful for catching late-arriving corrections in previous year
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: historical-import-recent-years
+  namespace: rain-tracker
+  labels:
+    app: rain-tracker
+    job-type: historical-import-recent-cron
+spec:
+  # Run weekly on Sunday at 4:00 AM UTC
+  schedule: "0 4 * * 0"
+
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Forbid
+
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 172800  # Clean up after 48 hours
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: rain-tracker
+            job-type: historical-import-recent-cron
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: importer
+            image: ghcr.io/your-org/rain-tracker-service:latest
+            command: ["/bin/bash", "-c"]
+            args:
+              - |
+                set -e
+
+                # Determine current and previous water years
+                CURRENT_MONTH=$(date +%m)
+                CURRENT_YEAR=$(date +%Y)
+
+                if [ "$CURRENT_MONTH" -ge 10 ]; then
+                  CURRENT_WY=$((CURRENT_YEAR + 1))
+                else
+                  CURRENT_WY=$CURRENT_YEAR
+                fi
+
+                PREVIOUS_WY=$((CURRENT_WY - 1))
+
+                echo "🚀 Weekly historical import for recent water years"
+                echo "Current date: $(date)"
+                echo "Importing water years: $PREVIOUS_WY, $CURRENT_WY"
+                echo ""
+
+                # Import previous year (might have corrections)
+                echo "Importing water year $PREVIOUS_WY..."
+                /app/historical-import \
+                  --database-url "$DATABASE_URL" \
+                  single \
+                  --water-year "$PREVIOUS_WY"
+
+                echo ""
+                sleep 5
+
+                # Import current year
+                echo "Importing water year $CURRENT_WY..."
+                /app/historical-import \
+                  --database-url "$DATABASE_URL" \
+                  single \
+                  --water-year "$CURRENT_WY"
+
+                echo ""
+                echo "✅ Import complete for years $PREVIOUS_WY and $CURRENT_WY"
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-secrets
+                  key: DATABASE_URL
+            - name: RUST_LOG
+              value: "info"
+            - name: MCFCD_BASE_URL
+              value: "https://alert.fcd.maricopa.gov/alert/Rain/"
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "500m"
+              limits:
+                memory: "2Gi"
+                cpu: "2000m"
+---
+# FOPR Metadata Refresh CronJob
+# Periodically checks for new gauges and updates metadata
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fopr-metadata-refresh
+  namespace: rain-tracker
+  labels:
+    app: rain-tracker
+    job-type: fopr-metadata-cron
+spec:
+  # Run monthly on the 1st day at 2:00 AM UTC
+  schedule: "0 2 1 * *"
+
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Forbid
+
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 172800
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app: rain-tracker
+            job-type: fopr-metadata-cron
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: fopr-importer
+            image: ghcr.io/your-org/rain-tracker-service:latest
+            command: ["/bin/bash", "-c"]
+            args:
+              - |
+                set -e
+
+                echo "🚀 Monthly FOPR metadata refresh"
+                echo "Date: $(date)"
+                echo ""
+
+                # Get gauges that haven't been checked in the last 30 days
+                # or have never been checked
+                GAUGES=$(psql "$DATABASE_URL" -t -c "
+                  SELECT station_id
+                  FROM gauges
+                  WHERE status = 'active'
+                    AND (fopr_last_checked_date IS NULL
+                         OR fopr_last_checked_date < CURRENT_DATE - INTERVAL '30 days')
+                  ORDER BY station_id;
+                ")
+
+                if [ -z "$GAUGES" ]; then
+                  echo "✅ All gauges are up to date (checked within last 30 days)"
+                  exit 0
+                fi
+
+                TOTAL=$(echo "$GAUGES" | wc -l | tr -d ' ')
+                echo "Found $TOTAL gauges to refresh"
+                echo ""
+
+                CURRENT=0
+                for STATION_ID in $GAUGES; do
+                  CURRENT=$((CURRENT + 1))
+                  echo "[$CURRENT/$TOTAL] Checking gauge $STATION_ID..."
+
+                  FOPR_URL="${MCFCD_BASE_URL}FOPR/${STATION_ID}_FOPR.xlsx"
+
+                  if curl -f -s -o /dev/null "$FOPR_URL"; then
+                    psql "$DATABASE_URL" -c "
+                      UPDATE gauges
+                      SET fopr_available = true,
+                          fopr_last_checked_date = CURRENT_DATE
+                      WHERE station_id = '$STATION_ID';
+                    "
+                    echo "  ✅ Available"
+                  else
+                    psql "$DATABASE_URL" -c "
+                      UPDATE gauges
+                      SET fopr_available = false,
+                          fopr_last_checked_date = CURRENT_DATE
+                      WHERE station_id = '$STATION_ID';
+                    "
+                    echo "  ❌ Not available"
+                  fi
+
+                  sleep 2  # Rate limiting
+                done
+
+                echo ""
+                echo "✅ FOPR metadata refresh complete"
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-secrets
+                  key: DATABASE_URL
+            - name: MCFCD_BASE_URL
+              value: "https://alert.fcd.maricopa.gov/alert/Rain/"
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "250m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"

@@ -15,7 +15,7 @@ GET {{baseUrl}}/api/v1/readings/59700/calendar-year/2019
 
 ###
 
-GET {{baseUrl}}/api/v1/readings/59700/water-year/2017
+GET {{baseUrl}}/api/v1/readings/59700/water-year/1998
 
 ###
 

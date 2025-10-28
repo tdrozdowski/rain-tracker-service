@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO rain_readings (station_id, reading_datetime, cumulative_inches, incremental_inches, data_source, import_metadata)\n            VALUES ($1, $2::date, $3, $4, $5, $6)\n            ON CONFLICT (reading_datetime, station_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Date",
+        "Float8",
+        "Float8",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3eeef0186e6d41aef4bffbb0ba8c6e356942851d989bf1fe94d62172871fb23a"
+}

@@ -1,29 +1,131 @@
 // Integration tests that share a database.
 // Each test uses a unique station_id to avoid interference when run concurrently.
 
-use chrono::{Datelike, Utc};
-use rain_tracker_service::db::{MonthlyRainfallRepository, ReadingRepository};
+use chrono::{Datelike, NaiveDate, Utc};
+use rain_tracker_service::db::{GaugeRepository, MonthlyRainfallRepository, ReadingRepository};
 use rain_tracker_service::fetcher::RainReading;
+use rain_tracker_service::fopr::MetaStatsData;
 use rain_tracker_service::services::ReadingService;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
+
+/// Test fixture module for setting up common test data
+mod test_fixtures {
+    use super::*;
+
+    /// Test gauge definitions
+    pub const TEST_GAUGES: &[(&str, &str)] = &[
+        ("TEST_INSERT_001", "Test Insert Gauge"),
+        ("TEST_WATER_YEAR_001", "Test Water Year Gauge"),
+        ("TEST_WATER_CALC_001", "Test Water Year Calculation Gauge"),
+        ("TEST_CAL_CALC_001", "Test Calendar Calculation Gauge"),
+        ("TEST_CAL_QUERY_001", "Test Calendar Query Gauge"),
+    ];
+
+    /// Setup test database with fixtures
+    pub async fn setup_test_db() -> PgPool {
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
+        });
+
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&database_url)
+            .await
+            .expect("Failed to connect to test database");
+
+        // Clean up all test data BEFORE running migrations
+        // This prevents foreign key constraint failures during migration
+        cleanup_all_test_data(&pool).await;
+
+        // Run migrations
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("Failed to run migrations");
+
+        // Insert test gauges AFTER migrations
+        insert_test_gauges(&pool).await;
+
+        pool
+    }
+
+    /// Clean up all test data (called before migrations)
+    async fn cleanup_all_test_data(pool: &PgPool) {
+        // Truncate all tables to ensure clean state
+        // This prevents foreign key constraint failures during migration
+        // Use TRUNCATE CASCADE to handle foreign keys
+        sqlx::query("TRUNCATE TABLE monthly_rainfall_summary, rain_readings, gauge_summaries, gauges CASCADE")
+            .execute(pool)
+            .await
+            .ok();
+    }
+
+    /// Insert test gauge fixtures into the database
+    async fn insert_test_gauges(pool: &PgPool) {
+        let gauge_repo = GaugeRepository::new(pool.clone());
+
+        for (station_id, station_name) in TEST_GAUGES {
+            // Check if gauge already exists
+            if gauge_repo.gauge_exists(station_id).await.unwrap_or(false) {
+                continue;
+            }
+
+            // Create minimal test gauge metadata
+            let metadata = MetaStatsData {
+                station_id: station_id.to_string(),
+                station_name: station_name.to_string(),
+                previous_station_ids: vec![],
+                station_type: "Rain".to_string(),
+                latitude: 33.5,
+                longitude: -112.0,
+                elevation_ft: Some(1000),
+                county: "Maricopa".to_string(),
+                city: Some("Test City".to_string()),
+                location_description: Some("Test Location".to_string()),
+                installation_date: Some(NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()),
+                data_begins_date: Some(NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()),
+                status: "Active".to_string(),
+                avg_annual_precipitation_inches: Some(7.5),
+                complete_years_count: Some(5),
+                incomplete_months_count: 0,
+                missing_months_count: 0,
+                data_quality_remarks: Some("Test gauge".to_string()),
+                fopr_metadata: serde_json::Map::new(),
+            };
+
+            gauge_repo
+                .upsert_gauge_metadata(&metadata)
+                .await
+                .expect("Failed to insert test gauge");
+        }
+    }
+
+    /// Clean up test data for a specific station_id
+    pub async fn cleanup_test_data(pool: &PgPool, station_id: &str) {
+        // Clean up in correct order due to foreign keys
+        sqlx::query!(
+            "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
+            station_id
+        )
+        .execute(pool)
+        .await
+        .ok();
+
+        sqlx::query!(
+            "DELETE FROM rain_readings WHERE station_id = $1",
+            station_id
+        )
+        .execute(pool)
+        .await
+        .ok();
+    }
+}
 
 #[tokio::test]
 async fn test_insert_and_retrieve_readings() {
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
-    });
-
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to test database");
-
-    // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("Failed to run migrations");
+    // Setup test database with fixtures
+    let pool = test_fixtures::setup_test_db().await;
 
     let reading_repo = ReadingRepository::new(pool.clone());
     let monthly_rainfall_repo = MonthlyRainfallRepository::new(pool.clone());
@@ -33,20 +135,7 @@ async fn test_insert_and_retrieve_readings() {
     let test_station_id = "TEST_INSERT_001";
 
     // Clean up any existing test data
-    sqlx::query!(
-        "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
-        test_station_id
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query!(
-        "DELETE FROM rain_readings WHERE station_id = $1",
-        test_station_id
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
+    test_fixtures::cleanup_test_data(&pool, test_station_id).await;
 
     // Create test readings
     let readings = vec![
@@ -126,21 +215,8 @@ async fn test_water_year_queries() {
 async fn test_water_year_total_rainfall_calculation() {
     use chrono::TimeZone;
 
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
-    });
-
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to test database");
-
-    // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("Failed to run migrations");
+    // Setup test database with fixtures
+    let pool = test_fixtures::setup_test_db().await;
 
     let reading_repo = ReadingRepository::new(pool.clone());
     let monthly_rainfall_repo = MonthlyRainfallRepository::new(pool.clone());
@@ -150,20 +226,7 @@ async fn test_water_year_total_rainfall_calculation() {
     let test_station_id = "TEST_WATER_CALC_001";
 
     // Clean up any existing test data
-    sqlx::query!(
-        "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
-        test_station_id
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query!(
-        "DELETE FROM rain_readings WHERE station_id = $1",
-        test_station_id
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
+    test_fixtures::cleanup_test_data(&pool, test_station_id).await;
 
     // Create test readings for water year 2024 (Oct 1, 2023 - Sep 30, 2024)
     let readings = vec![
@@ -234,21 +297,8 @@ async fn test_water_year_total_rainfall_calculation() {
 async fn test_calendar_year_total_rainfall_calculation() {
     use chrono::TimeZone;
 
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
-    });
-
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to test database");
-
-    // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("Failed to run migrations");
+    // Setup test database with fixtures
+    let pool = test_fixtures::setup_test_db().await;
 
     let reading_repo = ReadingRepository::new(pool.clone());
     let monthly_rainfall_repo = MonthlyRainfallRepository::new(pool.clone());
@@ -258,20 +308,7 @@ async fn test_calendar_year_total_rainfall_calculation() {
     let test_station_id = "TEST_CAL_CALC_001";
 
     // Clean up any existing test data
-    sqlx::query!(
-        "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
-        test_station_id
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query!(
-        "DELETE FROM rain_readings WHERE station_id = $1",
-        test_station_id
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
+    test_fixtures::cleanup_test_data(&pool, test_station_id).await;
 
     // Create test readings for calendar year 2025
     // Calendar year spans two water years:

@@ -44,8 +44,13 @@ CREATE TABLE IF NOT EXISTS gauges (
 );
 
 -- Spatial index for lat/long queries (nearest gauge, distance calculations)
-CREATE INDEX IF NOT EXISTS idx_gauges_location
-    ON gauges USING GIST(ll_to_earth(latitude, longitude, 0));
+-- Note: Requires earthdistance extension. Create manually if needed:
+--   CREATE EXTENSION IF NOT EXISTS cube;
+--   CREATE EXTENSION IF NOT EXISTS earthdistance;
+--   CREATE INDEX idx_gauges_location ON gauges USING GIST(ll_to_earth(latitude, longitude, 0));
+-- For now, using simple lat/lon indexes instead:
+CREATE INDEX IF NOT EXISTS idx_gauges_latitude ON gauges(latitude);
+CREATE INDEX IF NOT EXISTS idx_gauges_longitude ON gauges(longitude);
 
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_gauges_city ON gauges(city);

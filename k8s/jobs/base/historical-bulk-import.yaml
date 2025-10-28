@@ -1,0 +1,128 @@
+# Bulk Water Year Import Job
+# This job imports data for a range of water years from MCFCD
+# It will automatically download and import Excel files for the specified range
+# Usage: Edit START_YEAR and END_YEAR values below, then: kubectl create -f k8s/jobs/historical-bulk-import.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: historical-bulk-import-
+  labels:
+    app: rain-tracker
+    job-type: historical-bulk-import
+spec:
+  ttlSecondsAfterFinished: 172800  # Clean up after 48 hours (bulk jobs take longer)
+  backoffLimit: 2  # Retry twice for bulk operations
+  template:
+    metadata:
+      labels:
+        app: rain-tracker
+        job-type: historical-bulk-import
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: importer
+        image: ghcr.io/your-org/rain-tracker-service:latest
+        command: ["/app/historical-import"]
+        args:
+          - "--database-url=$(DATABASE_URL)"
+          - "single"  # Using single mode, called multiple times via shell script
+          - "--water-year=$(START_YEAR)"
+        env:
+        - name: START_YEAR
+          value: "2010"  # Change this: First water year to import
+        - name: END_YEAR
+          value: "2024"  # Change this: Last water year to import (inclusive)
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: DATABASE_URL
+        - name: RUST_LOG
+          value: "info"
+        - name: MCFCD_BASE_URL
+          value: "https://alert.fcd.maricopa.gov/alert/Rain/"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        # Bulk imports need more time
+        # Progress will be logged to stdout
+---
+# Alternative: Bulk Import using initContainer to loop through years
+# This version runs multiple imports sequentially within the same pod
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: historical-bulk-import-sequential-
+  labels:
+    app: rain-tracker
+    job-type: historical-bulk-import-sequential
+spec:
+  ttlSecondsAfterFinished: 172800  # Clean up after 48 hours
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: rain-tracker
+        job-type: historical-bulk-import-sequential
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: bulk-importer
+        image: ghcr.io/your-org/rain-tracker-service:latest
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -e
+            echo "🚀 Starting bulk import from $START_YEAR to $END_YEAR"
+
+            for year in $(seq $START_YEAR $END_YEAR); do
+              echo ""
+              echo "=================================================="
+              echo "Importing Water Year $year"
+              echo "=================================================="
+
+              /app/historical-import \
+                --database-url "$DATABASE_URL" \
+                single \
+                --water-year "$year" \
+                || {
+                  echo "❌ Failed to import water year $year"
+                  # Continue with next year instead of failing completely
+                  echo "⚠️  Continuing with remaining years..."
+                }
+
+              echo "✅ Completed water year $year"
+              echo ""
+
+              # Add a small delay between imports to avoid overwhelming the database
+              sleep 5
+            done
+
+            echo ""
+            echo "🎉 Bulk import complete!"
+            echo "Imported years: $START_YEAR to $END_YEAR"
+        env:
+        - name: START_YEAR
+          value: "2010"  # Change this: First water year to import
+        - name: END_YEAR
+          value: "2024"  # Change this: Last water year to import (inclusive)
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: DATABASE_URL
+        - name: RUST_LOG
+          value: "info"
+        - name: MCFCD_BASE_URL
+          value: "https://alert.fcd.maricopa.gov/alert/Rain/"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"

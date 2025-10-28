@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT station_id\n        FROM rain_readings\n        WHERE data_source = 'pdf_WY_2017'\n        AND station_id LIKE '59%'\n        ORDER BY station_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "station_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cde7a74e4a2fe7156f230b823003429b26094a439df3f7a40a4615eda38aa70a"
+}
