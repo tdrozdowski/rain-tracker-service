@@ -1,18 +1,11 @@
 use sqlx::postgres::PgPoolOptions;
-use tower_http::trace::TraceLayer;
-use tracing::{info, instrument};
+use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use rain_tracker_service::api::{create_router, AppState};
+use rain_tracker_service::app::Application;
 use rain_tracker_service::config::Config;
-use rain_tracker_service::db::{GaugeRepository, MonthlyRainfallRepository, ReadingRepository};
-use rain_tracker_service::fetcher::RainGaugeFetcher;
-use rain_tracker_service::gauge_list_fetcher::GaugeListFetcher;
-use rain_tracker_service::scheduler;
-use rain_tracker_service::services::{GaugeService, ReadingService};
 
 #[tokio::main]
-#[instrument]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing with environment filter support
     tracing_subscriber::registry()
@@ -48,63 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&pool).await?;
     info!("Database migrations completed");
 
-    // Create repositories
-    let reading_repo = ReadingRepository::new(pool.clone());
-    let gauge_repo = GaugeRepository::new(pool.clone());
-    let monthly_rainfall_repo = MonthlyRainfallRepository::new(pool.clone());
-
-    // Create services
-    let reading_service = ReadingService::new(reading_repo.clone(), monthly_rainfall_repo.clone());
-    let gauge_service = GaugeService::new(gauge_repo.clone());
-
-    // Create fetchers
-    let reading_fetcher = RainGaugeFetcher::new(config.gauge_url.clone());
-    let gauge_list_fetcher = GaugeListFetcher::new(config.gauge_list_url.clone());
-
-    // Start background schedulers (running concurrently)
-    info!("Starting background fetch schedulers");
-
-    // Scheduler 1: Individual gauge readings (15 min interval)
-    let reading_repo_clone = reading_repo.clone();
-    let monthly_repo_clone = monthly_rainfall_repo.clone();
-    let reading_fetcher_clone = reading_fetcher.clone();
-    let reading_interval = config.fetch_interval_minutes;
-    tokio::spawn(async move {
-        scheduler::start_fetch_scheduler(
-            reading_fetcher_clone,
-            reading_repo_clone,
-            monthly_repo_clone,
-            reading_interval,
-        )
-        .await;
-    });
-
-    // Scheduler 2: Gauge list/summaries (60 min interval)
-    let gauge_repo_clone = gauge_repo.clone();
-    let gauge_list_fetcher_clone = gauge_list_fetcher.clone();
-    let gauge_list_interval = config.gauge_list_interval_minutes;
-    tokio::spawn(async move {
-        scheduler::start_gauge_list_scheduler(
-            gauge_list_fetcher_clone,
-            gauge_repo_clone,
-            gauge_list_interval,
-        )
-        .await;
-    });
-
-    // Create API router
-    let app_state = AppState {
-        reading_service,
-        gauge_service,
-    };
-    let app = create_router(app_state).layer(TraceLayer::new_for_http());
-
-    // Start server
-    let addr = config.server_addr();
-    info!("Server listening on {}", addr);
-
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    // Build and run application
+    let app = Application::build(config, pool).await?;
+    app.run_until_stopped().await?;
 
     Ok(())
 }

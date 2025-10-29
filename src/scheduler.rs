@@ -3,9 +3,10 @@ use std::time::Duration;
 use tokio::time;
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::db::{GaugeRepository, MonthlyRainfallRepository, ReadingRepository};
+use crate::db::{MonthlyRainfallRepository, ReadingRepository};
 use crate::fetcher::RainGaugeFetcher;
 use crate::gauge_list_fetcher::GaugeListFetcher;
+use crate::services::gauge_service::GaugeService;
 
 #[instrument(skip(fetcher, reading_repo, monthly_repo), fields(interval_minutes = %interval_minutes))]
 pub async fn start_fetch_scheduler(
@@ -92,10 +93,10 @@ async fn fetch_and_store(
     Ok(inserted)
 }
 
-#[instrument(skip(fetcher, gauge_repo), fields(interval_minutes = %interval_minutes))]
+#[instrument(skip(fetcher, gauge_service), fields(interval_minutes = %interval_minutes))]
 pub async fn start_gauge_list_scheduler(
     fetcher: GaugeListFetcher,
-    gauge_repo: GaugeRepository,
+    gauge_service: GaugeService,
     interval_minutes: u64,
 ) {
     let mut interval = time::interval(Duration::from_secs(interval_minutes * 60));
@@ -109,7 +110,7 @@ pub async fn start_gauge_list_scheduler(
         interval.tick().await;
         debug!("Gauge list scheduler tick - initiating fetch");
 
-        match fetch_and_store_gauge_list(&fetcher, &gauge_repo).await {
+        match fetch_and_store_gauge_list(&fetcher, &gauge_service).await {
             Ok(count) => {
                 info!("Successfully fetched and stored {} gauge summaries", count);
             }
@@ -120,16 +121,44 @@ pub async fn start_gauge_list_scheduler(
     }
 }
 
-#[instrument(skip(fetcher, gauge_repo))]
+#[instrument(skip(fetcher, gauge_service))]
 async fn fetch_and_store_gauge_list(
     fetcher: &GaugeListFetcher,
-    gauge_repo: &GaugeRepository,
+    gauge_service: &GaugeService,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     debug!("Fetching gauge list");
     let gauges = fetcher.fetch_gauge_list().await?;
     info!("Fetched {} gauges from list", gauges.len());
 
+    // Handle new gauge discovery
+    let mut new_jobs_created = 0;
+    for gauge in &gauges {
+        match gauge_service.handle_new_gauge_discovery(gauge).await {
+            Ok(true) => {
+                info!("Created FOPR import job for new gauge {}", gauge.station_id);
+                new_jobs_created += 1;
+            }
+            Ok(false) => {
+                // Gauge already exists or job already created
+            }
+            Err(e) => {
+                error!(
+                    "Failed to handle discovery for gauge {}: {}",
+                    gauge.station_id, e
+                );
+            }
+        }
+    }
+
+    if new_jobs_created > 0 {
+        info!(
+            "Created {} FOPR import jobs for new gauges",
+            new_jobs_created
+        );
+    }
+
+    // Upsert gauge summaries
     debug!("Upserting gauge summaries into database");
-    let upserted = gauge_repo.upsert_summaries(&gauges).await?;
+    let upserted = gauge_service.upsert_summaries(&gauges).await?;
     Ok(upserted)
 }

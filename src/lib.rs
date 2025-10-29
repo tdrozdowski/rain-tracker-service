@@ -1,4 +1,5 @@
 pub mod api;
+pub mod app;
 pub mod config;
 pub mod db;
 pub mod fetch_error;
@@ -8,3 +9,4 @@ pub mod gauge_list_fetcher;
 pub mod importers;
 pub mod scheduler;
 pub mod services;
+pub mod workers;
