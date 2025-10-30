@@ -1,3 +1,4 @@
+use backon::{BackoffBuilder, ExponentialBuilder};
 use chrono::Utc;
 use std::time::Duration;
 use tokio::time::interval;
@@ -90,14 +91,24 @@ impl FoprImportWorker {
 
                 let new_retry_count = job.retry_count + 1;
 
-                // Business logic: Calculate retry schedule with exponential backoff
-                // 5 min, 15 min, 45 min
-                let retry_delay_secs = match new_retry_count {
-                    1 => 5 * 60,  // 5 minutes
-                    2 => 15 * 60, // 15 minutes
-                    _ => 45 * 60, // 45 minutes
-                };
-                let next_retry_at = Utc::now() + chrono::Duration::seconds(retry_delay_secs);
+                // Business logic: Calculate retry schedule with exponential backoff using backon
+                // Starts at 5 min, multiplies by 3x each time, caps at 45 min
+                // Includes jitter to prevent thundering herd
+                let backoff = ExponentialBuilder::default()
+                    .with_min_delay(Duration::from_secs(5 * 60)) // Start: 5 minutes
+                    .with_max_delay(Duration::from_secs(45 * 60)) // Cap: 45 minutes
+                    .with_factor(3.0) // 5min -> 15min -> 45min
+                    .with_jitter(); // Add randomness to prevent simultaneous retries
+
+                // Calculate delay for this retry attempt
+                // backon uses 0-indexed attempts, so retry_count 1 = attempt 0
+                let delay = backoff
+                    .build()
+                    .nth(new_retry_count.saturating_sub(1) as usize)
+                    .unwrap_or(Duration::from_secs(45 * 60)); // Fallback to max if calculation fails
+
+                let next_retry_at = Utc::now()
+                    + chrono::Duration::from_std(delay).unwrap_or(chrono::Duration::minutes(45));
 
                 // Business logic: Construct error history entry
                 let error_entry = ErrorHistoryEntry {
