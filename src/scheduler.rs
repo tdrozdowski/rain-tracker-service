@@ -1,4 +1,4 @@
-use chrono::Datelike;
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use std::time::Duration;
 use tokio::time;
 use tracing::{debug, error, info, instrument, warn};
@@ -76,10 +76,13 @@ async fn fetch_and_store(
             months_to_update.len()
         );
         for ((year, month), _) in months_to_update {
+            // Calculate month boundaries for recalculation
+            let (start, end) = month_date_range(year, month as u32);
+
             // Use the default station_id (59700) since RainGaugeFetcher doesn't expose station_id
             // TODO: Make station_id configurable in fetcher
             if let Err(e) = monthly_repo
-                .recalculate_monthly_summary("59700", year, month)
+                .recalculate_monthly_summary("59700", year, month, start, end)
                 .await
             {
                 error!(
@@ -161,4 +164,30 @@ async fn fetch_and_store_gauge_list(
     debug!("Upserting gauge summaries into database");
     let upserted = gauge_service.upsert_summaries(&gauges).await?;
     Ok(upserted)
+}
+
+/// Calculate date range for a specific month (helper for scheduler)
+///
+/// Returns (start_of_month, start_of_next_month)
+fn month_date_range(year: i32, month: u32) -> (DateTime<Utc>, DateTime<Utc>) {
+    let start_date = NaiveDate::from_ymd_opt(year, month, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+
+    let end_date = NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+
+    let start_dt = DateTime::<Utc>::from_naive_utc_and_offset(start_date, Utc);
+    let end_dt = DateTime::<Utc>::from_naive_utc_and_offset(end_date, Utc);
+
+    (start_dt, end_dt)
 }

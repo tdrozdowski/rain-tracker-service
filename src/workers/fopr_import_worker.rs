@@ -1,8 +1,9 @@
+use chrono::Utc;
 use std::time::Duration;
 use tokio::time::interval;
 use tracing::{error, info, instrument, warn};
 
-use crate::db::fopr_import_job_repository::FoprImportJobRepository;
+use crate::db::fopr_import_job_repository::{ErrorHistoryEntry, FoprImportJobRepository};
 use crate::services::fopr_import_service::FoprImportService;
 
 /// FOPR Import Worker
@@ -88,8 +89,31 @@ impl FoprImportWorker {
                 warn!("Job {} failed: {}", job.id, error_msg);
 
                 let new_retry_count = job.retry_count + 1;
+
+                // Business logic: Calculate retry schedule with exponential backoff
+                // 5 min, 15 min, 45 min
+                let retry_delay_secs = match new_retry_count {
+                    1 => 5 * 60,  // 5 minutes
+                    2 => 15 * 60, // 15 minutes
+                    _ => 45 * 60, // 45 minutes
+                };
+                let next_retry_at = Utc::now() + chrono::Duration::seconds(retry_delay_secs);
+
+                // Business logic: Construct error history entry
+                let error_entry = ErrorHistoryEntry {
+                    timestamp: Utc::now(),
+                    error: error_msg.clone(),
+                    retry_count: new_retry_count,
+                };
+
                 self.job_repo
-                    .mark_failed(job.id, &error_msg, new_retry_count)
+                    .mark_failed(
+                        job.id,
+                        &error_msg,
+                        &error_entry,
+                        new_retry_count,
+                        next_retry_at,
+                    )
                     .await?;
 
                 if new_retry_count >= job.max_retries {
@@ -99,8 +123,8 @@ impl FoprImportWorker {
                     );
                 } else {
                     info!(
-                        "Job {} will be retried (attempt {}/{})",
-                        job.id, new_retry_count, job.max_retries
+                        "Job {} will be retried (attempt {}/{}) at {}",
+                        job.id, new_retry_count, job.max_retries, next_retry_at
                     );
                 }
             }

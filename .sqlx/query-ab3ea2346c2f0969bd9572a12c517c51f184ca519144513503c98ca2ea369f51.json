@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, station_id, year, month, total_rainfall_inches, reading_count,\n                   first_reading_date, last_reading_date, min_cumulative_inches, max_cumulative_inches,\n                   created_at, updated_at\n            FROM monthly_rainfall_summary\n            WHERE station_id = $1 AND year = $2\n            ORDER BY month ASC\n            ",
+  "query": "\n            SELECT id, station_id, year, month, total_rainfall_inches, reading_count,\n                   first_reading_date, last_reading_date, min_cumulative_inches, max_cumulative_inches,\n                   created_at, updated_at\n            FROM monthly_rainfall_summary\n            WHERE station_id = $1\n              AND (\n                (year > EXTRACT(YEAR FROM $2::timestamptz) OR\n                 (year = EXTRACT(YEAR FROM $2::timestamptz) AND month >= EXTRACT(MONTH FROM $2::timestamptz)))\n                AND\n                (year < EXTRACT(YEAR FROM $3::timestamptz) OR\n                 (year = EXTRACT(YEAR FROM $3::timestamptz) AND month < EXTRACT(MONTH FROM $3::timestamptz)))\n              )\n            ORDER BY year ASC, month ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -67,7 +67,8 @@
     "parameters": {
       "Left": [
         "Text",
-        "Int4"
+        "Timestamptz",
+        "Timestamptz"
       ]
     },
     "nullable": [
@@ -85,5 +86,5 @@
       false
     ]
   },
-  "hash": "6baec07bb0810e35f72fbb75442b26aeae918530cdf96ba8c1a6a87e295e1c4f"
+  "hash": "ab3ea2346c2f0969bd9572a12c517c51f184ca519144513503c98ca2ea369f51"
 }

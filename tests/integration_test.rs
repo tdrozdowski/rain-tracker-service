@@ -1,7 +1,7 @@
 // Integration tests that share a database.
 // Each test uses a unique station_id to avoid interference when run concurrently.
 
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use rain_tracker_service::db::{GaugeRepository, MonthlyRainfallRepository, ReadingRepository};
 use rain_tracker_service::fetcher::RainReading;
 use rain_tracker_service::fopr::MetaStatsData;
@@ -265,16 +265,19 @@ async fn test_water_year_total_rainfall_calculation() {
     }
 
     // Populate monthly aggregates
+    let (start, end) = month_date_range(2023, 10);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(test_station_id, 2023, 10)
+        .recalculate_monthly_summary(test_station_id, 2023, 10, start, end)
         .await
         .unwrap();
+    let (start, end) = month_date_range(2024, 3);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(test_station_id, 2024, 3)
+        .recalculate_monthly_summary(test_station_id, 2024, 3, start, end)
         .await
         .unwrap();
+    let (start, end) = month_date_range(2024, 9);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(test_station_id, 2024, 9)
+        .recalculate_monthly_summary(test_station_id, 2024, 9, start, end)
         .await
         .unwrap();
 
@@ -372,28 +375,34 @@ async fn test_calendar_year_total_rainfall_calculation() {
     }
 
     // Populate monthly aggregates
+    let (start, end) = month_date_range(2024, 12);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(test_station_id, 2024, 12)
+        .recalculate_monthly_summary(test_station_id, 2024, 12, start, end)
         .await
         .unwrap();
+    let (start, end) = month_date_range(2025, 1);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(test_station_id, 2025, 1)
+        .recalculate_monthly_summary(test_station_id, 2025, 1, start, end)
         .await
         .unwrap();
+    let (start, end) = month_date_range(2025, 3);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(test_station_id, 2025, 3)
+        .recalculate_monthly_summary(test_station_id, 2025, 3, start, end)
         .await
         .unwrap();
+    let (start, end) = month_date_range(2025, 9);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(test_station_id, 2025, 9)
+        .recalculate_monthly_summary(test_station_id, 2025, 9, start, end)
         .await
         .unwrap();
+    let (start, end) = month_date_range(2025, 10);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(test_station_id, 2025, 10)
+        .recalculate_monthly_summary(test_station_id, 2025, 10, start, end)
         .await
         .unwrap();
+    let (start, end) = month_date_range(2025, 12);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(test_station_id, 2025, 12)
+        .recalculate_monthly_summary(test_station_id, 2025, 12, start, end)
         .await
         .unwrap();
 
@@ -444,4 +453,29 @@ async fn test_calendar_year_queries() {
         .unwrap();
 
     // Test passes if query completes without error
+}
+/// Calculate date range for a specific month (helper for tests)
+///
+/// Returns (start_of_month, start_of_next_month)
+fn month_date_range(year: i32, month: u32) -> (DateTime<Utc>, DateTime<Utc>) {
+    let start_date = NaiveDate::from_ymd_opt(year, month, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+
+    let end_date = NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+
+    let start_dt = DateTime::<Utc>::from_naive_utc_and_offset(start_date, Utc);
+    let end_dt = DateTime::<Utc>::from_naive_utc_and_offset(end_date, Utc);
+
+    (start_dt, end_dt)
 }

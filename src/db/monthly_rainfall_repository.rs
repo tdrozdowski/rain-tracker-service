@@ -92,38 +92,16 @@ impl MonthlyRainfallRepository {
         Ok(())
     }
 
-    /// Get monthly summaries for a year (calendar year)
+    /// Get monthly summaries by date range
+    ///
+    /// Generic data access method - business logic for water years, calendar years, etc.
+    /// should be in the service layer.
     #[instrument(skip(self))]
-    pub async fn get_calendar_year_summaries(
+    pub async fn get_summaries_by_date_range(
         &self,
         station_id: &str,
-        year: i32,
-    ) -> Result<Vec<MonthlyRainfallSummary>, DbError> {
-        let summaries = sqlx::query_as!(
-            MonthlyRainfallSummary,
-            r#"
-            SELECT id, station_id, year, month, total_rainfall_inches, reading_count,
-                   first_reading_date, last_reading_date, min_cumulative_inches, max_cumulative_inches,
-                   created_at, updated_at
-            FROM monthly_rainfall_summary
-            WHERE station_id = $1 AND year = $2
-            ORDER BY month ASC
-            "#,
-            station_id,
-            year
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(summaries)
-    }
-
-    /// Get monthly summaries for a water year (Oct prev year - Sep current year)
-    #[instrument(skip(self))]
-    pub async fn get_water_year_summaries(
-        &self,
-        station_id: &str,
-        water_year: i32,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
     ) -> Result<Vec<MonthlyRainfallSummary>, DbError> {
         let summaries = sqlx::query_as!(
             MonthlyRainfallSummary,
@@ -133,11 +111,18 @@ impl MonthlyRainfallRepository {
                    created_at, updated_at
             FROM monthly_rainfall_summary
             WHERE station_id = $1
-              AND ((year = $2 - 1 AND month >= 10) OR (year = $2 AND month <= 9))
+              AND (
+                (year > EXTRACT(YEAR FROM $2::timestamptz) OR
+                 (year = EXTRACT(YEAR FROM $2::timestamptz) AND month >= EXTRACT(MONTH FROM $2::timestamptz)))
+                AND
+                (year < EXTRACT(YEAR FROM $3::timestamptz) OR
+                 (year = EXTRACT(YEAR FROM $3::timestamptz) AND month < EXTRACT(MONTH FROM $3::timestamptz)))
+              )
             ORDER BY year ASC, month ASC
             "#,
             station_id,
-            water_year
+            start,
+            end
         )
         .fetch_all(&self.pool)
         .await?;
@@ -145,34 +130,23 @@ impl MonthlyRainfallRepository {
         Ok(summaries)
     }
 
-    /// Recalculate monthly summary from raw readings
-    /// Useful for backfilling or correcting data
+    /// Recalculate monthly summary from raw readings by date range
+    ///
+    /// Pure data access method - service layer should calculate date boundaries.
+    /// Useful for backfilling or correcting data.
     #[instrument(skip(self))]
     pub async fn recalculate_monthly_summary(
         &self,
         station_id: &str,
         year: i32,
         month: i32,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
     ) -> Result<(), DbError> {
-        // Fetch all readings for this month from rain_readings table
-        let start_date = chrono::NaiveDate::from_ymd_opt(year, month as u32, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let start_dt = DateTime::<Utc>::from_naive_utc_and_offset(start_date, Utc);
-
-        let end_date = if month == 12 {
-            chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap()
-        } else {
-            chrono::NaiveDate::from_ymd_opt(year, month as u32 + 1, 1)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap()
-        };
-        let end_dt = DateTime::<Utc>::from_naive_utc_and_offset(end_date, Utc);
+        debug!(
+            "Recalculating monthly summary for {} {}-{:02}",
+            station_id, year, month
+        );
 
         let readings = sqlx::query_as!(
             Reading,
@@ -184,8 +158,8 @@ impl MonthlyRainfallRepository {
             ORDER BY reading_datetime ASC
             "#,
             station_id,
-            start_dt,
-            end_dt
+            start,
+            end
         )
         .fetch_all(&self.pool)
         .await?;

@@ -174,33 +174,22 @@ impl FoprImportJobRepository {
         Ok(())
     }
 
-    /// Mark a job as failed and schedule retry if applicable
-    #[instrument(skip(self), fields(job_id = job_id, error = %error))]
+    /// Mark a job as failed and schedule retry
+    ///
+    /// Pure data access method - service/worker layer should calculate retry schedule
+    /// and construct error history entries.
+    #[instrument(skip(self, error_entry), fields(job_id = job_id))]
     pub async fn mark_failed(
         &self,
         job_id: i32,
-        error: &str,
+        error_message: &str,
+        error_entry: &ErrorHistoryEntry,
         retry_count: i32,
+        next_retry_at: DateTime<Utc>,
     ) -> Result<(), DbError> {
         debug!("Marking job {} as failed (retry {})", job_id, retry_count);
 
-        // Calculate next retry time with exponential backoff
-        // 5 min, 15 min, 45 min
-        let retry_delay_secs = match retry_count {
-            0 => 5 * 60,  // 5 minutes
-            1 => 15 * 60, // 15 minutes
-            _ => 45 * 60, // 45 minutes
-        };
-
-        let next_retry_at = Utc::now() + chrono::Duration::seconds(retry_delay_secs);
-
-        // Build error history entry
-        let error_entry = ErrorHistoryEntry {
-            timestamp: Utc::now(),
-            error: error.to_string(),
-            retry_count,
-        };
-        let error_entry_json = serde_json::to_value(&error_entry).unwrap();
+        let error_entry_json = serde_json::to_value(error_entry).unwrap();
 
         sqlx::query!(
             r#"
@@ -213,7 +202,7 @@ impl FoprImportJobRepository {
             WHERE id = $1
             "#,
             job_id,
-            error,
+            error_message,
             error_entry_json,
             retry_count,
             next_retry_at

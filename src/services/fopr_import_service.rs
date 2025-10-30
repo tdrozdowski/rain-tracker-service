@@ -1,3 +1,4 @@
+use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::PgPool;
 use std::collections::HashSet;
 use std::io::Write;
@@ -230,8 +231,11 @@ impl FoprImportService {
         debug!("Recalculating {} monthly summaries", months.len());
 
         for (station_id, year, month) in months {
+            // Business logic: Calculate month boundaries (first day of month to first day of next month)
+            let (start, end) = Self::month_date_range(*year, *month);
+
             self.monthly_repo
-                .recalculate_monthly_summary(station_id, *year, *month as i32)
+                .recalculate_monthly_summary(station_id, *year, *month as i32, start, end)
                 .await
                 .map_err(|e| {
                     let DbError::SqlxError(sqlx_err) = e;
@@ -241,6 +245,32 @@ impl FoprImportService {
 
         debug!("Monthly summaries recalculated");
         Ok(())
+    }
+
+    /// Calculate date range for a specific month
+    ///
+    /// Returns (start_of_month, start_of_next_month)
+    fn month_date_range(year: i32, month: u32) -> (DateTime<Utc>, DateTime<Utc>) {
+        let start_date = NaiveDate::from_ymd_opt(year, month, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+
+        let (next_year, next_month) = if month == 12 {
+            (year + 1, 1)
+        } else {
+            (year, month + 1)
+        };
+
+        let end_date = NaiveDate::from_ymd_opt(next_year, next_month, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+
+        let start_dt = DateTime::<Utc>::from_naive_utc_and_offset(start_date, Utc);
+        let end_dt = DateTime::<Utc>::from_naive_utc_and_offset(end_date, Utc);
+
+        (start_dt, end_dt)
     }
 
     /// Check if FOPR import job already exists for a station

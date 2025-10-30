@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use rain_tracker_service::db::{GaugeRepository, MonthlyRainfallRepository};
@@ -376,8 +376,9 @@ async fn import_excel(
         let monthly_repo = MonthlyRainfallRepository::new(pool.clone());
 
         for (station_id, year, month) in months_to_recalculate {
+            let (start, end) = month_date_range(year, month);
             monthly_repo
-                .recalculate_monthly_summary(&station_id, year, month as i32)
+                .recalculate_monthly_summary(&station_id, year, month as i32, start, end)
                 .await?;
             pb.inc(1);
         }
@@ -564,8 +565,9 @@ async fn import_pdf(
         let monthly_repo = MonthlyRainfallRepository::new(pool.clone());
 
         for (station_id, year, month) in months_to_recalculate {
+            let (start, end) = month_date_range(year, month);
             monthly_repo
-                .recalculate_monthly_summary(&station_id, year, month as i32)
+                .recalculate_monthly_summary(&station_id, year, month as i32, start, end)
                 .await?;
             pb.inc(1);
         }
@@ -786,8 +788,9 @@ async fn import_fopr(
     let monthly_repo = MonthlyRainfallRepository::new(pool.clone());
 
     for (sid, year, month) in months_to_recalculate {
+        let (start, end) = month_date_range(year, month);
         monthly_repo
-            .recalculate_monthly_summary(&sid, year, month as i32)
+            .recalculate_monthly_summary(&sid, year, month as i32, start, end)
             .await?;
     }
 
@@ -1600,8 +1603,9 @@ async fn insert_readings_batch(
         let monthly_repo = MonthlyRainfallRepository::new(pool.clone());
 
         for (station_id, year, month) in months_to_recalculate {
+            let (start, end) = month_date_range(year, month);
             monthly_repo
-                .recalculate_monthly_summary(&station_id, year, month as i32)
+                .recalculate_monthly_summary(&station_id, year, month as i32, start, end)
                 .await?;
             pb.inc(1);
         }
@@ -1737,4 +1741,30 @@ fn print_summary(
     }
 
     println!();
+}
+
+/// Calculate date range for a specific month (helper for historical import)
+///
+/// Returns (start_of_month, start_of_next_month)
+fn month_date_range(year: i32, month: u32) -> (DateTime<Utc>, DateTime<Utc>) {
+    let start_date = NaiveDate::from_ymd_opt(year, month, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+
+    let end_date = NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+
+    let start_dt = DateTime::<Utc>::from_naive_utc_and_offset(start_date, Utc);
+    let end_dt = DateTime::<Utc>::from_naive_utc_and_offset(end_date, Utc);
+
+    (start_dt, end_dt)
 }

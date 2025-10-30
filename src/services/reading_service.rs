@@ -29,10 +29,13 @@ impl ReadingService {
         station_id: &str,
         water_year: i32,
     ) -> Result<WaterYearSummary, DbError> {
-        // Fetch monthly summaries for the water year (Oct prev year - Sep current year)
+        // Business logic: Calculate water year date range (Oct prev year - Sep current year)
+        let (start, end) = Self::water_year_date_range(water_year);
+
+        // Fetch monthly summaries for the water year
         let monthly_summaries = self
             .monthly_rainfall_repo
-            .get_water_year_summaries(station_id, water_year)
+            .get_summaries_by_date_range(station_id, start, end)
             .await?;
 
         // Calculate total rainfall by summing monthly totals
@@ -44,8 +47,7 @@ impl ReadingService {
         // Calculate total readings count
         let total_readings: i32 = monthly_summaries.iter().map(|m| m.reading_count).sum();
 
-        // Fetch actual readings for detailed view
-        let (start, end) = Self::water_year_date_range(water_year);
+        // Fetch actual readings for detailed view (reuse same date range)
         let readings = self
             .reading_repo
             .find_by_date_range(station_id, start, end)
@@ -65,10 +67,13 @@ impl ReadingService {
         station_id: &str,
         year: i32,
     ) -> Result<CalendarYearSummary, DbError> {
+        // Business logic: Calculate calendar year date range (Jan 1 - Dec 31)
+        let (start, end) = Self::calendar_year_date_range_only(year);
+
         // Fetch monthly summaries for the calendar year
         let monthly_summaries_db = self
             .monthly_rainfall_repo
-            .get_calendar_year_summaries(station_id, year)
+            .get_summaries_by_date_range(station_id, start, end)
             .await?;
 
         // Calculate year-to-date rainfall by summing monthly totals
@@ -77,8 +82,7 @@ impl ReadingService {
             .map(|m| m.total_rainfall_inches)
             .sum();
 
-        // Fetch actual readings for detailed view (calendar year only)
-        let (start, end) = Self::calendar_year_date_range_only(year);
+        // Fetch actual readings for detailed view (reuse same date range)
         let mut readings = self
             .reading_repo
             .find_by_date_range(station_id, start, end)
