@@ -344,13 +344,18 @@ fn validate_longitude(lon: f64) -> Result<(), ParseError> {
     }
 }
 
-/// Validate elevation is within reasonable range
+/// Validate elevation is within Arizona state range
+///
+/// Arizona elevations range from approximately 70 feet (Colorado River at
+/// Mexican border) to 12,637 feet (Humphreys Peak near Flagstaff). We use
+/// a slightly wider range to account for partnership gauges and measurement
+/// variations.
 fn validate_elevation(elev: i32) -> Result<(), ParseError> {
-    if (500..=4000).contains(&elev) {
+    if (0..=13000).contains(&elev) {
         Ok(())
     } else {
         Err(ParseError::ValidationError(format!(
-            "Elevation {elev} outside reasonable range (500 - 4000 ft)"
+            "Elevation {elev} outside Arizona range (0 - 13,000 ft)"
         )))
     }
 }
