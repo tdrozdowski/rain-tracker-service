@@ -314,24 +314,32 @@ fn add_frequency_stat<F, D>(
     }
 }
 
-/// Validate latitude is within Maricopa County bounds
+/// Validate latitude is within Arizona state bounds
+///
+/// Arizona extends from approximately 31.3°N (southern border with Mexico)
+/// to 37.0°N (northern border with Utah). We use slightly wider bounds
+/// to account for partnership gauges near state borders.
 fn validate_latitude(lat: f64) -> Result<(), ParseError> {
-    if (32.0..=34.0).contains(&lat) {
+    if (31.0..=37.5).contains(&lat) {
         Ok(())
     } else {
         Err(ParseError::ValidationError(format!(
-            "Latitude {lat} outside Maricopa County range (32.0 - 34.0)"
+            "Latitude {lat} outside Arizona state range (31.0 - 37.5)"
         )))
     }
 }
 
-/// Validate longitude is within Maricopa County bounds
+/// Validate longitude is within Arizona state bounds
+///
+/// Arizona extends from approximately -114.8°W (western border with California/Nevada)
+/// to -109.0°W (eastern border with New Mexico). We use slightly wider bounds
+/// to account for partnership gauges near state borders.
 fn validate_longitude(lon: f64) -> Result<(), ParseError> {
-    if (-113.0..=-111.0).contains(&lon) {
+    if (-115.0..=-108.5).contains(&lon) {
         Ok(())
     } else {
         Err(ParseError::ValidationError(format!(
-            "Longitude {lon} outside Maricopa County range (-113.0 - -111.0)"
+            "Longitude {lon} outside Arizona state range (-115.0 - -108.5)"
         )))
     }
 }
