@@ -1,9 +1,10 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, TimeZone, Utc};
 use sqlx::PgPool;
 use tracing::{debug, info, instrument};
 
 use crate::db::{DbError, Reading};
 use crate::fetcher::RainReading;
+use crate::importers::excel_importer::HistoricalReading;
 
 #[derive(Clone)]
 pub struct ReadingRepository {
@@ -53,6 +54,75 @@ impl ReadingRepository {
             inserted, duplicates
         );
         Ok(inserted)
+    }
+
+    /// Insert historical readings (from FOPR imports, Excel files, etc.) in bulk
+    ///
+    /// This is a data access method - all business logic should be in the service layer.
+    /// Returns (inserted_count, duplicate_count, affected_months) where affected_months
+    /// contains (year, month) tuples for months that had new data inserted.
+    #[instrument(skip(self, readings), fields(station_id = %station_id, count = readings.len()))]
+    #[allow(clippy::type_complexity)]
+    pub async fn bulk_insert_historical_readings(
+        &self,
+        station_id: &str,
+        data_source: &str,
+        readings: &[HistoricalReading],
+    ) -> Result<(usize, usize, Vec<(i32, u32)>), DbError> {
+        debug!(
+            "Bulk inserting {} historical readings for station {} from source {}",
+            readings.len(),
+            station_id,
+            data_source
+        );
+
+        let mut inserted = 0;
+        let mut duplicates = 0;
+        let mut affected_months = Vec::new();
+
+        for reading in readings {
+            let import_metadata = reading.footnote_marker.as_ref().map(|marker| {
+                serde_json::json!({
+                    "footnote_marker": marker
+                })
+            });
+
+            // Convert NaiveDate to DateTime<Utc> for midnight
+            let reading_datetime =
+                Utc.from_utc_datetime(&reading.reading_date.and_hms_opt(0, 0, 0).unwrap());
+
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO rain_readings (station_id, reading_datetime, cumulative_inches, incremental_inches, data_source, import_metadata)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (reading_datetime, station_id) DO NOTHING
+                "#,
+                station_id,
+                reading_datetime,
+                0.0, // FOPR files only have incremental, cumulative is calculated separately
+                reading.rainfall_inches,
+                data_source,
+                import_metadata as _
+            )
+            .execute(&self.pool)
+            .await?;
+
+            if result.rows_affected() > 0 {
+                inserted += 1;
+                let year = reading.reading_date.year();
+                let month = reading.reading_date.month();
+                affected_months.push((year, month));
+            } else {
+                duplicates += 1;
+            }
+        }
+
+        info!(
+            "Bulk insert complete: {} inserted, {} duplicates for station {}",
+            inserted, duplicates, station_id
+        );
+
+        Ok((inserted, duplicates, affected_months))
     }
 
     /// Generic query to find readings within a date range for a specific gauge

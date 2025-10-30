@@ -1,4 +1,3 @@
-use chrono::{Datelike, TimeZone, Utc};
 use sqlx::PgPool;
 use std::collections::HashSet;
 use std::io::Write;
@@ -6,7 +5,7 @@ use std::time::Instant;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::db::fopr_import_job_repository::{FoprImportJobRepository, ImportStats};
-use crate::db::{DbError, GaugeRepository, MonthlyRainfallRepository};
+use crate::db::{DbError, GaugeRepository, MonthlyRainfallRepository, ReadingRepository};
 use crate::fopr::daily_data_parser::FoprDailyDataParser;
 use crate::fopr::metadata_parser::MetaStatsData;
 use crate::importers::downloader::McfcdDownloader;
@@ -36,9 +35,9 @@ pub enum FoprImportError {
 
 /// Service for importing FOPR (Full Operational Period of Record) data
 pub struct FoprImportService {
-    pool: PgPool,
     downloader: McfcdDownloader,
     gauge_repo: GaugeRepository,
+    reading_repo: ReadingRepository,
     monthly_repo: MonthlyRainfallRepository,
     job_repo: FoprImportJobRepository,
 }
@@ -47,10 +46,10 @@ impl FoprImportService {
     pub fn new(pool: PgPool) -> Self {
         Self {
             gauge_repo: GaugeRepository::new(pool.clone()),
+            reading_repo: ReadingRepository::new(pool.clone()),
             monthly_repo: MonthlyRainfallRepository::new(pool.clone()),
             job_repo: FoprImportJobRepository::new(pool.clone()),
             downloader: McfcdDownloader::new(),
-            pool,
         }
     }
 
@@ -179,6 +178,7 @@ impl FoprImportService {
 
     /// Insert readings in bulk with deduplication
     ///
+    /// Business logic: Creates data_source identifier and coordinates with repository.
     /// Returns: (inserted_count, duplicate_count, months_to_recalculate)
     #[instrument(skip(self, readings), fields(station_id = %station_id, count = readings.len()))]
     #[allow(clippy::type_complexity)]
@@ -193,47 +193,25 @@ impl FoprImportService {
             station_id
         );
 
-        let mut inserted = 0;
-        let mut duplicates = 0;
-        let mut months_to_recalculate: HashSet<(String, i32, u32)> = HashSet::new();
+        // Business logic: Create data_source identifier for FOPR imports
+        let data_source = format!("fopr_import_{station_id}");
 
-        for reading in readings {
-            let data_source = format!("fopr_import_{station_id}");
-            let import_metadata = reading.footnote_marker.as_ref().map(|marker| {
-                serde_json::json!({
-                    "footnote_marker": marker
-                })
-            });
+        // Delegate to repository for data access
+        let (inserted, duplicates, affected_months) = self
+            .reading_repo
+            .bulk_insert_historical_readings(station_id, &data_source, &readings)
+            .await
+            .map_err(|e| {
+                let DbError::SqlxError(sqlx_err) = e;
+                FoprImportError::Database(sqlx_err)
+            })?;
 
-            // Convert NaiveDate to DateTime<Utc> for midnight
-            let reading_datetime =
-                Utc.from_utc_datetime(&reading.reading_date.and_hms_opt(0, 0, 0).unwrap());
-
-            let result = sqlx::query!(
-                r#"
-                INSERT INTO rain_readings (station_id, reading_datetime, cumulative_inches, incremental_inches, data_source, import_metadata)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (reading_datetime, station_id) DO NOTHING
-                "#,
-                reading.station_id,
-                reading_datetime,
-                0.0, // FOPR files only have incremental, cumulative is calculated separately
-                reading.rainfall_inches,
-                data_source,
-                import_metadata as _
-            )
-            .execute(&self.pool)
-            .await?;
-
-            if result.rows_affected() > 0 {
-                inserted += 1;
-                let year = reading.reading_date.year();
-                let month = reading.reading_date.month();
-                months_to_recalculate.insert((station_id.to_string(), year, month));
-            } else {
-                duplicates += 1;
-            }
-        }
+        // Business logic: Convert Vec<(year, month)> to HashSet<(station_id, year, month)>
+        // for coordination with MonthlyRainfallRepository
+        let months_to_recalculate: HashSet<(String, i32, u32)> = affected_months
+            .into_iter()
+            .map(|(year, month)| (station_id.to_string(), year, month))
+            .collect();
 
         debug!(
             "Insert complete: {} inserted, {} duplicates",
