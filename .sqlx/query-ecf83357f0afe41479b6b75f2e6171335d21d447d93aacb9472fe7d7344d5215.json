@@ -1,0 +1,104 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id, station_id, status AS \"status: JobStatus\",\n                priority, created_at, started_at, completed_at,\n                error_message, error_history, retry_count, max_retries, next_retry_at,\n                source, gauge_summary, import_stats\n            FROM fopr_import_jobs\n            WHERE status IN ('pending', 'failed')\n            ORDER BY priority DESC, created_at ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "station_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "status: JobStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "priority",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "started_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "error_history",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "max_retries",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "next_retry_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "source",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "gauge_summary",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 14,
+        "name": "import_stats",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "ecf83357f0afe41479b6b75f2e6171335d21d447d93aacb9472fe7d7344d5215"
+}

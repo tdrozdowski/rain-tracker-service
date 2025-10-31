@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, station_id, year, month, total_rainfall_inches, reading_count,\n                   first_reading_date, last_reading_date, min_cumulative_inches, max_cumulative_inches,\n                   created_at, updated_at\n            FROM monthly_rainfall_summary\n            WHERE station_id = $1\n              AND (\n                (year > EXTRACT(YEAR FROM $2::timestamptz) OR\n                 (year = EXTRACT(YEAR FROM $2::timestamptz) AND month >= EXTRACT(MONTH FROM $2::timestamptz)))\n                AND\n                (year < EXTRACT(YEAR FROM $3::timestamptz) OR\n                 (year = EXTRACT(YEAR FROM $3::timestamptz) AND month < EXTRACT(MONTH FROM $3::timestamptz)))\n              )\n            ORDER BY year ASC, month ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "station_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "month",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "total_rainfall_inches",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "reading_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "first_reading_date",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_reading_date",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "min_cumulative_inches",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "max_cumulative_inches",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "ab3ea2346c2f0969bd9572a12c517c51f184ca519144513503c98ca2ea369f51"
+}

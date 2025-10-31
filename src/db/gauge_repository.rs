@@ -1,7 +1,8 @@
 use sqlx::PgPool;
-use tracing::{debug, instrument};
+use tracing::{debug, info, instrument};
 
 use crate::db::{DbError, GaugeSummary};
+use crate::fopr::MetaStatsData;
 use crate::gauge_list_fetcher::GaugeSummary as FetchedGauge;
 
 #[derive(Clone)]
@@ -128,5 +129,96 @@ impl GaugeRepository {
         }
 
         Ok(gauge)
+    }
+
+    /// Upsert gauge metadata from FOPR Meta_Stats sheet
+    ///
+    /// This inserts a new gauge or updates existing gauge metadata.
+    /// Used during FOPR imports to ensure gauge exists before importing readings.
+    #[instrument(skip(self, metadata), fields(station_id = %metadata.station_id))]
+    pub async fn upsert_gauge_metadata(&self, metadata: &MetaStatsData) -> Result<(), DbError> {
+        info!(
+            "Upserting gauge metadata for station {}",
+            metadata.station_id
+        );
+
+        // Use untyped query to avoid bigdecimal dependency for DECIMAL columns
+        let result = sqlx::query(
+            r#"
+            INSERT INTO gauges (
+                station_id, station_name, station_type, previous_station_ids,
+                latitude, longitude, elevation_ft, county, city, location_description,
+                installation_date, data_begins_date, status,
+                avg_annual_precipitation_inches, complete_years_count,
+                incomplete_months_count, missing_months_count, data_quality_remarks,
+                fopr_metadata, metadata_source, metadata_updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, 'fopr_import', NOW())
+            ON CONFLICT (station_id) DO UPDATE SET
+                station_name = EXCLUDED.station_name,
+                station_type = EXCLUDED.station_type,
+                previous_station_ids = EXCLUDED.previous_station_ids,
+                latitude = EXCLUDED.latitude,
+                longitude = EXCLUDED.longitude,
+                elevation_ft = EXCLUDED.elevation_ft,
+                county = EXCLUDED.county,
+                city = EXCLUDED.city,
+                location_description = EXCLUDED.location_description,
+                installation_date = EXCLUDED.installation_date,
+                data_begins_date = EXCLUDED.data_begins_date,
+                status = EXCLUDED.status,
+                avg_annual_precipitation_inches = EXCLUDED.avg_annual_precipitation_inches,
+                complete_years_count = EXCLUDED.complete_years_count,
+                incomplete_months_count = EXCLUDED.incomplete_months_count,
+                missing_months_count = EXCLUDED.missing_months_count,
+                data_quality_remarks = EXCLUDED.data_quality_remarks,
+                fopr_metadata = EXCLUDED.fopr_metadata,
+                metadata_source = 'fopr_import',
+                metadata_updated_at = NOW()
+            "#
+        )
+        .bind(&metadata.station_id)
+        .bind(&metadata.station_name)
+        .bind(&metadata.station_type)
+        .bind(&metadata.previous_station_ids)
+        .bind(metadata.latitude)
+        .bind(metadata.longitude)
+        .bind(metadata.elevation_ft)
+        .bind(&metadata.county)
+        .bind(&metadata.city)
+        .bind(&metadata.location_description)
+        .bind(metadata.installation_date)
+        .bind(metadata.data_begins_date)
+        .bind(&metadata.status)
+        .bind(metadata.avg_annual_precipitation_inches)
+        .bind(metadata.complete_years_count)
+        .bind(metadata.incomplete_months_count)
+        .bind(metadata.missing_months_count)
+        .bind(&metadata.data_quality_remarks)
+        .bind(serde_json::to_value(&metadata.fopr_metadata).unwrap())
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() > 0 {
+            info!(
+                "Successfully upserted gauge metadata for station {}",
+                metadata.station_id
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Check if a gauge exists by station_id
+    #[instrument(skip(self), fields(station_id = %station_id))]
+    pub async fn gauge_exists(&self, station_id: &str) -> Result<bool, DbError> {
+        let count = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) FROM gauges WHERE station_id = $1"#,
+            station_id
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count.unwrap_or(0) > 0)
     }
 }

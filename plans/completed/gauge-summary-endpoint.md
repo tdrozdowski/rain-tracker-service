@@ -1923,6 +1923,7 @@ async fn test_get_gauges_paginated_last_page() {
 **What to test**: HTML/text parsing without network calls
 
 **`src/fetcher.rs` (existing tests remain)**
+
 ```rust
 #[test]
 fn test_parse_reading() {
@@ -1937,7 +1938,7 @@ fn test_parse_reading() {
 
 #[test]
 fn test_parse_html_with_real_sample() {
-    let html = include_str!("../http/httpRequests/2025-10-14T135928.200.html");
+    let html = include_str!("../../http/httpRequests/2025-10-14T135928.200.html");
     let fetcher = RainGaugeFetcher::new("".to_string());
     let result = fetcher.parse_html(html);
 

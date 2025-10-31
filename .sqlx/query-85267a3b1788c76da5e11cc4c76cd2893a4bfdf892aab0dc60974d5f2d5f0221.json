@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) as \"count!\"\n        FROM rain_readings\n        WHERE station_id = $1\n        AND reading_datetime >= '2016-10-01'\n        AND reading_datetime < '2017-10-01'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "85267a3b1788c76da5e11cc4c76cd2893a4bfdf892aab0dc60974d5f2d5f0221"
+}

@@ -1,0 +1,164 @@
+# ConfigMap for Historical Import Jobs
+# This ConfigMap contains shared configuration for all import jobs
+# Usage: kubectl apply -f k8s/jobs/import-job-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: historical-import-config
+  namespace: rain-tracker
+  labels:
+    app: rain-tracker
+    component: import-jobs
+data:
+  # MCFCD Data Source URLs
+  MCFCD_BASE_URL: "https://alert.fcd.maricopa.gov/alert/Rain/"
+  MCFCD_EXCEL_PATH: "pcp_WY_"  # Suffix: YYYY.xlsx
+  MCFCD_PDF_PATH: "pcp"  # Suffix: MMYY.pdf
+  MCFCD_FOPR_PATH: "FOPR/"  # Suffix: {station_id}_FOPR.xlsx
+
+  # Import Behavior
+  RUST_LOG: "info"  # Logging level: trace, debug, info, warn, error
+  BATCH_SIZE: "1000"  # Number of rows per database transaction
+  RATE_LIMIT_SECONDS: "2"  # Delay between FOPR downloads to avoid overwhelming server
+
+  # Data Range Configuration
+  # First year with Excel format available
+  EXCEL_START_YEAR: "2022"
+
+  # First year with PDF format available
+  PDF_START_YEAR: "2000"
+
+  # Default range for bulk imports (if not specified)
+  DEFAULT_START_YEAR: "2010"
+
+  # Resource Timeouts
+  DOWNLOAD_TIMEOUT_SECONDS: "300"  # 5 minutes for large files
+  PARSE_TIMEOUT_SECONDS: "600"  # 10 minutes for complex parsing
+
+  # Database Configuration
+  DB_CONNECTION_POOL_SIZE: "5"
+  DB_QUERY_TIMEOUT_SECONDS: "60"
+
+  # Progress Reporting
+  PROGRESS_UPDATE_INTERVAL: "100"  # Log progress every N rows
+  SHOW_PROGRESS_BARS: "true"  # Enable/disable progress bars
+
+  # Error Handling
+  MAX_RETRY_ATTEMPTS: "3"
+  RETRY_DELAY_SECONDS: "5"
+  CONTINUE_ON_ERROR: "false"  # Whether to continue bulk imports if one year fails
+
+  # Data Validation
+  VALIDATE_RAINFALL_MAX: "20.0"  # Flag values > 20 inches per day as suspicious
+  VALIDATE_CUMULATIVE_MAX: "100.0"  # Flag cumulative > 100 inches as suspicious
+
+  # Import Modes
+  # Set to "true" to enable these features
+  SKIP_EXISTING_DATA: "true"  # Use ON CONFLICT DO NOTHING (faster)
+  RECALCULATE_SUMMARIES: "true"  # Update monthly summaries after import
+  UPDATE_CUMULATIVE: "true"  # Calculate cumulative rainfall values
+
+  # Temporary File Handling
+  TEMP_DIR: "/tmp/rain-tracker-imports"
+  CLEANUP_TEMP_FILES: "true"  # Delete downloaded files after import
+
+  # Performance Tuning
+  PARALLEL_GAUGE_PROCESSING: "false"  # Process multiple gauges simultaneously
+  MAX_PARALLEL_GAUGES: "5"  # If parallel processing enabled
+
+---
+# Secret for database credentials (example - use actual secrets in production)
+# For production, use SealedSecrets, Vault, or cloud provider secret management
+# This is just a template showing the structure
+apiVersion: v1
+kind: Secret
+metadata:
+  name: historical-import-secrets
+  namespace: rain-tracker
+  labels:
+    app: rain-tracker
+    component: import-jobs
+type: Opaque
+stringData:
+  # Database URL for import jobs
+  # Should point to same database as main service
+  DATABASE_URL: "postgres://rain_tracker:PASSWORD_HERE@postgres-service:5432/rain_tracker"
+
+  # Optional: S3 or cloud storage credentials for archiving imported files
+  # AWS_ACCESS_KEY_ID: ""
+  # AWS_SECRET_ACCESS_KEY: ""
+  # S3_BUCKET: "rain-tracker-historical-archives"
+
+---
+# PersistentVolumeClaim for storing downloaded files (optional)
+# Useful if you want to persist downloaded Excel/PDF files for auditing
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: historical-data-pvc
+  namespace: rain-tracker
+  labels:
+    app: rain-tracker
+    component: import-jobs
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi  # Adjust based on how many years you want to store
+  # Optional: specify storage class
+  # storageClassName: standard
+
+---
+# Service Account for import jobs (if you need specific RBAC permissions)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: historical-import-sa
+  namespace: rain-tracker
+  labels:
+    app: rain-tracker
+    component: import-jobs
+
+---
+# Role for import jobs (minimal permissions needed)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: historical-import-role
+  namespace: rain-tracker
+  labels:
+    app: rain-tracker
+    component: import-jobs
+rules:
+  # Read ConfigMaps for configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  # Read Secrets for database credentials
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  # Optional: Write to PVC if using persistent storage
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get"]
+
+---
+# RoleBinding for import jobs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: historical-import-rolebinding
+  namespace: rain-tracker
+  labels:
+    app: rain-tracker
+    component: import-jobs
+subjects:
+  - kind: ServiceAccount
+    name: historical-import-sa
+    namespace: rain-tracker
+roleRef:
+  kind: Role
+  name: historical-import-role
+  apiGroup: rbac.authorization.k8s.io

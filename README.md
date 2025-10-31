@@ -1,5 +1,8 @@
 # Rain Tracker Service
 
+[![CI/CD Pipeline](https://github.com/tdrozdowski/rain-tracker-service/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/tdrozdowski/rain-tracker-service/actions/workflows/ci-cd.yml)
+[![codecov](https://codecov.io/gh/tdrozdowski/rain-tracker-service/branch/master/graph/badge.svg)](https://codecov.io/gh/tdrozdowski/rain-tracker-service)
+
 A Rust-based service that tracks rain gauge readings from the Maricopa County Flood Control District and provides a RESTful API for querying rainfall data by rain year or calendar year.
 
 ## Features
@@ -151,6 +154,73 @@ sqlx migrate run
 cargo run
 ```
 
+## Historical Data Import
+
+The service includes a CLI tool for importing historical rainfall data from MCFCD Excel files (2022+).
+
+### Import a Single Water Year
+
+To import historical data from a local Excel file:
+
+```bash
+# Build the import tool
+cargo build --bin historical-import
+
+# Import water year 2023 (Oct 2022 - Sep 2023)
+cargo run --bin historical-import -- \
+  --database-url "postgres://postgres:password@localhost:5432/rain_tracker" \
+  excel -f plans/pcp_WY_2023.xlsx -w 2023 -y
+```
+
+The import process will:
+1. Parse the Excel file (all 12 monthly sheets)
+2. Insert readings into the database (with automatic deduplication)
+3. Recalculate monthly rainfall summaries for affected months
+4. Show progress bars for each step
+
+**Example output:**
+```
+Parsing Excel file for water year 2023...
+✓ Parsed 8593 readings
+Inserting 8593 readings into database...
+[00:03] ████████████████████████████ 8593/8593
+✓ Inserted 8593 new readings, 0 duplicates skipped
+Recalculating monthly summaries for 84 station-months...
+[00:01] ████████████████████████████ 84/84
+✓ Monthly summaries recalculated
+Import completed successfully!
+```
+
+### Kubernetes Import Jobs
+
+For production environments, use the Kubernetes job manifest:
+
+```bash
+# Edit the water year value in the manifest
+# Then create the job:
+kubectl create -f k8s/jobs/historical-single-year-import.yaml
+
+# Or use the helper script:
+./scripts/import-water-year.sh 2023
+
+# Monitor the job:
+kubectl logs -f -l job-type=historical-single-year
+
+# Check job status:
+kubectl get jobs -l job-type=historical-single-year
+```
+
+The job will automatically clean up after 24 hours.
+
+### Data Source Tracking
+
+Imported historical data is tagged with a `data_source` field:
+- `live_scrape` - Real-time data from the current scraper
+- `excel_WY_2023` - Historical data from Water Year 2023 Excel file
+- `pdf_1119` - Historical data from November 2019 PDF file (future)
+
+This allows you to query and analyze data by source if needed.
+
 ## Development Workflow
 
 ### Running CI Checks Locally
@@ -273,6 +343,15 @@ The MCFCD table contains:
 - Incremental rainfall (inches) for that specific reading
 
 ## Recent Changes
+
+### v0.4.0 - Historical Data Import (2025)
+- Added `historical-import` CLI tool for importing historical rainfall data
+- Support for MCFCD Excel files (Water Year format, 2022+)
+- Automatic monthly rainfall summary recalculation after import
+- Data source tracking (`data_source` column) to distinguish live vs historical data
+- Kubernetes job manifest for production imports
+- Helper scripts for easy import execution
+- Successfully tested with 8,593+ readings from Water Year 2023
 
 ### v0.3.0 - Gauge-Specific Endpoints (2025)
 - **Breaking Change**: All readings endpoints now require a gauge ID parameter

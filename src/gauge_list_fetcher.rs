@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument, warn};
 
 use crate::fetch_error::FetchError;
@@ -5,7 +6,7 @@ use crate::fetch_error::FetchError;
 // Note: This is the "fetcher" version of GaugeSummary (before being persisted)
 // The DB model GaugeSummary (in db/models.rs) includes id, timestamps, etc.
 // In the repository, import as: use crate::gauge_list_fetcher::GaugeSummary as FetchedGauge;
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaugeSummary {
     pub station_id: String,
     pub gauge_name: String,

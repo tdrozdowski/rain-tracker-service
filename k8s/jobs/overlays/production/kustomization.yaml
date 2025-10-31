@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Production environment overlay for import jobs
+
+namespace: rain-tracker
+
+resources:
+  - ../../base
+
+# Production-specific labels
+labels:
+  - pairs:
+      environment: production
+
+# Production configuration overrides via patches
+patches:
+  # Update ConfigMap for production environment
+  - patch: |-
+      - op: replace
+        path: /data/RUST_LOG
+        value: "info"
+      - op: replace
+        path: /data/CONTINUE_ON_ERROR
+        value: "false"
+      - op: replace
+        path: /data/BATCH_SIZE
+        value: "2000"
+    target:
+      kind: ConfigMap
+      name: historical-import-config
+
+# Use specific version tag for production (not 'latest')
+images:
+  - name: ghcr.io/your-org/rain-tracker-service
+    newTag: v0.3.0  # Change to actual release version

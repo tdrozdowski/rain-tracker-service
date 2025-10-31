@@ -70,6 +70,81 @@ sqlx migrate run
 ./prepare-sqlx.sh      # One-time SQLx metadata generation
 ```
 
+## Rust Code Standards
+
+### Module Structure (Rust 2018+ Edition)
+
+**CRITICAL**: This project uses **modern Rust module structure (Rust 2018+)**. We do **NOT** use `mod.rs` files.
+
+#### ❌ NEVER DO THIS (Old Rust 2015 Style):
+```
+src/
+├── mymodule/
+│   ├── mod.rs          ❌ WRONG - Do not create this!
+│   ├── submodule1.rs
+│   └── submodule2.rs
+```
+
+#### ✅ ALWAYS DO THIS (Modern Rust 2018+ Style):
+```
+src/
+├── mymodule.rs         ✅ Module declaration file
+├── mymodule/
+│   ├── submodule1.rs   ✅ Implementation files
+│   └── submodule2.rs   ✅ Implementation files
+```
+
+**How it works:**
+1. **Create a module file** at the parent level: `src/mymodule.rs`
+2. **Declare submodules** in that file:
+   ```rust
+   // src/mymodule.rs
+   pub mod submodule1;
+   pub mod submodule2;
+
+   // Optional: re-export commonly used items
+   pub use submodule1::SomeType;
+   pub use submodule2::AnotherType;
+   ```
+3. **Create implementation files** in the directory: `src/mymodule/*.rs`
+
+**Real Example from this Project:**
+```
+src/
+├── services.rs         // Declares service modules
+├── services/
+│   ├── reading_service.rs
+│   └── gauge_service.rs
+```
+
+In `src/services.rs`:
+```rust
+pub mod reading_service;
+pub mod gauge_service;
+
+pub use reading_service::ReadingService;
+pub use gauge_service::GaugeService;
+```
+
+**Why This Matters:**
+- `mod.rs` is legacy Rust 2015 syntax (before Rust 2018 edition)
+- Modern Rust uses the file-as-module pattern
+- Cleaner project structure, easier navigation
+- Follows current Rust best practices
+- Matches what the Rust community uses today
+
+**When Adding New Modules:**
+1. Create `src/module_name.rs` for the module declaration
+2. Create `src/module_name/` directory for submodules
+3. Add submodule files as `src/module_name/submodule.rs`
+4. Declare submodules in `src/module_name.rs` with `pub mod submodule;`
+5. **NEVER create `src/module_name/mod.rs`**
+
+**Rust Edition:**
+- This project uses **Rust 2021 edition** (see `Cargo.toml`)
+- Module system changed in Rust 2018
+- We follow Rust 2018+ conventions
+
 ## Architecture
 
 ### High-Level Flow
@@ -214,6 +289,130 @@ Located in `k8s/`:
 - `deployment.yaml`: Service deployment spec
 - `service.yaml`: LoadBalancer service definition
 
+## Dependency Selection Guidelines
+
+**IMPORTANT**: When adding new crates to this project, evaluate them against these criteria to ensure they align with our architecture and maintenance standards.
+
+### Core Pillar Crates
+
+Our architecture is built on these foundational crates. New dependencies MUST be compatible with:
+
+1. **Tokio** (async runtime) - All async operations use Tokio
+2. **Axum** (web framework) - HTTP server and routing
+3. **SQLx** (database) - Async PostgreSQL with compile-time verification
+
+### Evaluation Criteria for New Dependencies
+
+Before adding a crate, verify:
+
+#### 1. Active Maintenance ✅
+- **Recent updates**: Check when the last release was published
+  - ✅ Good: Updated within last 6 months
+  - ⚠️ Warning: 6-12 months since last update
+  - ❌ Avoid: >12 months without updates (unless very stable/mature)
+- **GitHub activity**: Check recent commits, issues, PRs
+  - Use: `cargo search <crate> --limit 1` then check repository
+  - Look for: Active maintainer responses, bug fixes, dependency updates
+- **Version**: Check if actively maintained across Rust versions
+  - ✅ Good: Supports recent Rust stable (1.70+)
+  - ⚠️ Warning: Requires older MSRV that conflicts with our other deps
+
+#### 2. Architecture Compatibility 🏗️
+- **Async compatibility**: Does it work with Tokio?
+  - ✅ Native async support (works directly with Tokio)
+  - ✅ Synchronous but can use with `tokio::task::spawn_blocking()`
+  - ❌ Requires different async runtime (async-std, smol, etc.)
+- **Axum integration**: If web-related, does it work with Axum?
+  - Check for Axum extractors, middleware compatibility
+- **SQLx compatibility**: If database-related, does it work with SQLx?
+  - Must not conflict with SQLx's async model or connection pooling
+
+#### 3. Quality Indicators 📊
+- **Documentation**: Well-documented API on docs.rs
+- **Examples**: Provides usage examples
+- **Downloads**: Check popularity (not required, but helpful signal)
+  - `cargo info <crate>` shows download stats
+- **License**: Compatible with our MIT license (MIT, Apache-2.0, BSD, etc.)
+- **Dependencies**: Reasonable dependency tree (avoid heavy transitive deps)
+  - Use: `cargo tree -p <crate>` after adding
+
+#### 4. Specific Use Cases
+
+**For blocking I/O operations** (file parsing, heavy computation):
+- ✅ Use with `tokio::task::spawn_blocking()`
+- Example: PDF/Excel parsing crates don't need to be async
+
+**For web scraping** (HTML parsing):
+- ✅ Must work with `reqwest` (our HTTP client)
+- ✅ Can be synchronous (we spawn blocking tasks)
+- Current: `scraper` crate for HTML parsing
+
+**For database operations**:
+- ⚠️ MUST use SQLx - do NOT add alternative database crates
+- ✅ Database-agnostic helpers (like serde serialization) are OK
+
+**For datetime operations**:
+- ✅ Must use `chrono` (already in our deps)
+- ❌ Do NOT add alternative datetime crates (time, etc.)
+
+### Adding a New Dependency - Checklist
+
+```bash
+# 1. Check crate info
+cargo info <crate-name>
+
+# 2. Verify recent updates (look for version and date)
+cargo search <crate-name> --limit 1
+
+# 3. Check repository activity (if listed in cargo info)
+# Visit GitHub and check:
+# - Recent commits (last 6 months)
+# - Open/closed issues ratio
+# - Maintainer responsiveness
+
+# 4. Add to Cargo.toml with specific version
+# Use cargo add for proper version resolution
+cargo add <crate-name>
+
+# 5. Check dependency tree for conflicts
+cargo tree -p <crate-name>
+
+# 6. Verify builds with SQLx
+cargo check  # (with DATABASE_URL set or SQLX_OFFLINE=true)
+
+# 7. Document why you added it
+# Add comment in Cargo.toml explaining the use case
+```
+
+### Example: Adding Excel Parser
+
+```toml
+[dependencies]
+# Excel parsing for historical data import
+# Read-only, pure Rust, works with spawn_blocking()
+# Last updated: 2025-09 (actively maintained)
+# Repository: https://github.com/tafia/calamine
+calamine = { version = "0.31", features = ["dates"] }
+```
+
+### Red Flags - Do NOT Add Crates That:
+
+❌ Require a different async runtime (async-std, smol)
+❌ Haven't been updated in >2 years (unless extremely stable)
+❌ Conflict with existing core dependencies (different HTTP client, different datetime library)
+❌ Have security advisories (check `cargo audit`)
+❌ Are pre-1.0 with breaking changes in patch versions
+❌ Duplicate functionality we already have (multiple HTTP clients, multiple JSON parsers)
+
+### When in Doubt
+
+If unsure about a dependency:
+1. Search for alternatives: `cargo search <keyword>`
+2. Check what popular projects use (Axum examples, SQLx examples)
+3. Ask: "Does this integrate cleanly with Tokio/Axum/SQLx?"
+4. Prefer crates from established authors (tokio-rs, serde-rs, etc.)
+5. Start with minimal features, add more only if needed
+
 ## Development Workflow
 
 ### Pre-Commit Hook
@@ -248,6 +447,10 @@ Located in `http/api-tests.http`. Uses IntelliJ HTTP Client format. CI runs thes
 5. **Docker build fails**: Run `./prepare-sqlx.sh` first to generate SQLx metadata in `.sqlx/` directory
 
 6. **CI workflow step fails with database errors**: Every CI step that compiles code (build, clippy, generate-openapi, tests) needs `DATABASE_URL` in its `env:` section
+
+7. **Adding new dependencies**: Before adding crates, review the **Dependency Selection Guidelines** section to ensure compatibility with our Tokio/Axum/SQLx architecture and verify the crate is actively maintained
+
+8. **Module structure**: **NEVER create `mod.rs` files** - we use modern Rust 2018+ module structure. See the **Rust Code Standards** section for correct module organization. Use `src/module_name.rs` to declare modules, not `src/module_name/mod.rs`
 
 ## Version History
 

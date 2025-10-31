@@ -1,0 +1,54 @@
+# Single Water Year Import Job
+# This job imports data for a specific water year from the MCFCD Excel files
+# Usage: Edit WATER_YEAR value below, then: kubectl create -f k8s/jobs/historical-single-year-import.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: historical-wy-import-
+  labels:
+    app: rain-tracker
+    job-type: historical-single-year
+spec:
+  ttlSecondsAfterFinished: 86400  # Clean up after 24 hours
+  backoffLimit: 1  # Only retry once if fails
+  template:
+    metadata:
+      labels:
+        app: rain-tracker
+        job-type: historical-single-year
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: importer
+        image: ghcr.io/your-org/rain-tracker-service:latest
+        command: ["/app/historical-import"]
+        args:
+          - "excel"
+          - "--file=/data/pcp_WY_$(WATER_YEAR).xlsx"
+          - "--water-year=$(WATER_YEAR)"
+          - "--yes"
+        env:
+        - name: WATER_YEAR
+          value: "2023"  # Change this value before applying
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: DATABASE_URL
+        - name: RUST_LOG
+          value: "info"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        # Optional: mount a volume with pre-downloaded Excel files
+        # volumeMounts:
+        # - name: data
+        #   mountPath: /data
+      # volumes:
+      # - name: data
+      #   persistentVolumeClaim:
+      #     claimName: historical-data-pvc

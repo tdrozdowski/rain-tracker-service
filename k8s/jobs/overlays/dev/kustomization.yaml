@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Development environment overlay for import jobs
+
+namespace: rain-tracker-dev
+
+resources:
+  - ../../base
+
+# Development-specific labels
+labels:
+  - pairs:
+      environment: dev
+
+# Development configuration overrides via patches
+patches:
+  # Update ConfigMap for dev environment
+  - patch: |-
+      - op: replace
+        path: /data/RUST_LOG
+        value: "debug"
+      - op: replace
+        path: /data/CONTINUE_ON_ERROR
+        value: "true"
+      - op: replace
+        path: /data/SHOW_PROGRESS_BARS
+        value: "true"
+    target:
+      kind: ConfigMap
+      name: historical-import-config
+
+  # Suspend all CronJobs in dev (use on-demand jobs instead)
+  - patch: |-
+      - op: replace
+        path: /spec/suspend
+        value: true
+    target:
+      kind: CronJob
+
+# Use development image tag
+images:
+  - name: ghcr.io/your-org/rain-tracker-service
+    newTag: dev-latest
