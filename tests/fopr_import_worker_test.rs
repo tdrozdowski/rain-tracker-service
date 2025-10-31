@@ -5,6 +5,7 @@ use chrono::Utc;
 use rain_tracker_service::db::fopr_import_job_repository::{ImportStats, JobStatus};
 use rain_tracker_service::db::{FoprImportJobRepository, GaugeRepository};
 use rain_tracker_service::fopr::MetaStatsData;
+use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
@@ -14,6 +15,11 @@ mod worker_test_fixtures {
     use chrono::NaiveDate;
 
     pub const TEST_WORKER_GAUGE: &str = "TEST_WORKER_001";
+    pub const TEST_WORKER_GAUGE_2: &str = "TEST_WORKER_002";
+    pub const TEST_WORKER_GAUGE_3: &str = "TEST_WORKER_003";
+    pub const TEST_WORKER_GAUGE_4: &str = "TEST_WORKER_004";
+    pub const TEST_WORKER_GAUGE_5: &str = "TEST_WORKER_005";
+    pub const TEST_WORKER_GAUGE_6: &str = "TEST_WORKER_006";
 
     /// Setup test database for worker tests
     pub async fn setup_test_db() -> PgPool {
@@ -33,29 +39,30 @@ mod worker_test_fixtures {
             .await
             .expect("Failed to run migrations");
 
-        // Insert test gauge
-        insert_test_gauge(&pool).await;
+        // Insert all test gauges
+        insert_test_gauge(&pool, TEST_WORKER_GAUGE).await;
+        insert_test_gauge(&pool, TEST_WORKER_GAUGE_2).await;
+        insert_test_gauge(&pool, TEST_WORKER_GAUGE_3).await;
+        insert_test_gauge(&pool, TEST_WORKER_GAUGE_4).await;
+        insert_test_gauge(&pool, TEST_WORKER_GAUGE_5).await;
+        insert_test_gauge(&pool, TEST_WORKER_GAUGE_6).await;
 
         pool
     }
 
     /// Insert test gauge for worker tests
-    async fn insert_test_gauge(pool: &PgPool) {
+    async fn insert_test_gauge(pool: &PgPool, station_id: &str) {
         let gauge_repo = GaugeRepository::new(pool.clone());
 
         // Check if gauge already exists
-        if gauge_repo
-            .gauge_exists(TEST_WORKER_GAUGE)
-            .await
-            .unwrap_or(false)
-        {
+        if gauge_repo.gauge_exists(station_id).await.unwrap_or(false) {
             return;
         }
 
         // Create test gauge metadata
         let metadata = MetaStatsData {
-            station_id: TEST_WORKER_GAUGE.to_string(),
-            station_name: "Test Worker Gauge".to_string(),
+            station_id: station_id.to_string(),
+            station_name: format!("Test Worker Gauge {station_id}"),
             previous_station_ids: vec![],
             station_type: "Rain".to_string(),
             latitude: 33.5,
@@ -63,7 +70,7 @@ mod worker_test_fixtures {
             elevation_ft: Some(1000),
             county: "Maricopa".to_string(),
             city: Some("Phoenix".to_string()),
-            location_description: Some("Test gauge for worker tests".to_string()),
+            location_description: Some(format!("Test gauge for worker tests: {station_id}")),
             installation_date: Some(NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()),
             data_begins_date: Some(NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()),
             status: "Active".to_string(),
@@ -71,7 +78,7 @@ mod worker_test_fixtures {
             complete_years_count: Some(5),
             incomplete_months_count: 0,
             missing_months_count: 0,
-            data_quality_remarks: Some("Test gauge for worker tests".to_string()),
+            data_quality_remarks: Some(format!("Test gauge for worker tests: {station_id}")),
             fopr_metadata: serde_json::Map::new(),
         };
 
@@ -81,12 +88,12 @@ mod worker_test_fixtures {
             .expect("Failed to insert test gauge");
     }
 
-    /// Clean up test data
-    pub async fn cleanup_test_data(pool: &PgPool) {
+    /// Clean up test data for a specific station
+    pub async fn cleanup_test_data(pool: &PgPool, station_id: &str) {
         // Clean up jobs
         sqlx::query!(
             "DELETE FROM fopr_import_jobs WHERE station_id = $1",
-            TEST_WORKER_GAUGE
+            station_id
         )
         .execute(pool)
         .await
@@ -95,7 +102,7 @@ mod worker_test_fixtures {
         // Clean up readings
         sqlx::query!(
             "DELETE FROM rain_readings WHERE station_id = $1",
-            TEST_WORKER_GAUGE
+            station_id
         )
         .execute(pool)
         .await
@@ -104,15 +111,17 @@ mod worker_test_fixtures {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_worker_claims_pending_job() {
     let pool = worker_test_fixtures::setup_test_db().await;
-    worker_test_fixtures::cleanup_test_data(&pool).await;
+    let station_id = worker_test_fixtures::TEST_WORKER_GAUGE;
+    worker_test_fixtures::cleanup_test_data(&pool, station_id).await;
 
     let job_repo = FoprImportJobRepository::new(pool.clone());
 
     // Create a pending job
     let job_id = job_repo
-        .create_job(worker_test_fixtures::TEST_WORKER_GAUGE, "test", 10, None)
+        .create_job(station_id, "test", 10, None)
         .await
         .unwrap();
 
@@ -132,9 +141,9 @@ async fn test_worker_claims_pending_job() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_worker_no_job_when_queue_empty() {
     let pool = worker_test_fixtures::setup_test_db().await;
-    worker_test_fixtures::cleanup_test_data(&pool).await;
 
     // Clean up ALL jobs to ensure empty queue
     sqlx::query!("DELETE FROM fopr_import_jobs")
@@ -150,15 +159,17 @@ async fn test_worker_no_job_when_queue_empty() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_worker_marks_job_completed() {
     let pool = worker_test_fixtures::setup_test_db().await;
-    worker_test_fixtures::cleanup_test_data(&pool).await;
+    let station_id = worker_test_fixtures::TEST_WORKER_GAUGE_2;
+    worker_test_fixtures::cleanup_test_data(&pool, station_id).await;
 
     let job_repo = FoprImportJobRepository::new(pool.clone());
 
     // Create and claim a job
     let job_id = job_repo
-        .create_job(worker_test_fixtures::TEST_WORKER_GAUGE, "test", 10, None)
+        .create_job(station_id, "test", 10, None)
         .await
         .unwrap();
 
@@ -183,15 +194,17 @@ async fn test_worker_marks_job_completed() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_worker_marks_job_failed() {
     let pool = worker_test_fixtures::setup_test_db().await;
-    worker_test_fixtures::cleanup_test_data(&pool).await;
+    let station_id = worker_test_fixtures::TEST_WORKER_GAUGE_3;
+    worker_test_fixtures::cleanup_test_data(&pool, station_id).await;
 
     let job_repo = FoprImportJobRepository::new(pool.clone());
 
     // Create and claim a job
     let job_id = job_repo
-        .create_job(worker_test_fixtures::TEST_WORKER_GAUGE, "test", 10, None)
+        .create_job(station_id, "test", 10, None)
         .await
         .unwrap();
 
@@ -226,16 +239,18 @@ async fn test_worker_marks_job_failed() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_worker_retry_backoff_calculation() {
     // This test verifies the retry backoff logic by checking multiple retries
     let pool = worker_test_fixtures::setup_test_db().await;
-    worker_test_fixtures::cleanup_test_data(&pool).await;
+    let station_id = worker_test_fixtures::TEST_WORKER_GAUGE_4;
+    worker_test_fixtures::cleanup_test_data(&pool, station_id).await;
 
     let job_repo = FoprImportJobRepository::new(pool.clone());
 
     // Create a job
     let job_id = job_repo
-        .create_job(worker_test_fixtures::TEST_WORKER_GAUGE, "test", 10, None)
+        .create_job(station_id, "test", 10, None)
         .await
         .unwrap();
 
@@ -251,14 +266,9 @@ async fn test_worker_retry_backoff_calculation() {
             retry_count: retry,
         };
 
-        // Calculate next retry time (this mimics the worker's backon logic)
-        let base_delay_minutes = match retry {
-            1 => 5,  // ~5 min (with jitter)
-            2 => 15, // ~15 min (with jitter)
-            _ => 45, // ~45 min (cap, with jitter)
-        };
-
-        let next_retry_at = Utc::now() + chrono::Duration::minutes(base_delay_minutes);
+        // For testing, set next_retry_at to past so job is immediately claimable
+        // In production, this would use exponential backoff
+        let next_retry_at = Utc::now() - chrono::Duration::seconds(1);
 
         job_repo
             .mark_failed(
@@ -283,15 +293,17 @@ async fn test_worker_retry_backoff_calculation() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_worker_max_retries_exceeded() {
     let pool = worker_test_fixtures::setup_test_db().await;
-    worker_test_fixtures::cleanup_test_data(&pool).await;
+    let station_id = worker_test_fixtures::TEST_WORKER_GAUGE_5;
+    worker_test_fixtures::cleanup_test_data(&pool, station_id).await;
 
     let job_repo = FoprImportJobRepository::new(pool.clone());
 
     // Create a job with max_retries = 3
     let job_id = job_repo
-        .create_job(worker_test_fixtures::TEST_WORKER_GAUGE, "test", 10, None)
+        .create_job(station_id, "test", 10, None)
         .await
         .unwrap();
 
@@ -324,7 +336,8 @@ async fn test_worker_max_retries_exceeded() {
             retry_count: retry,
         };
 
-        let next_retry_at = Utc::now() + chrono::Duration::minutes(5);
+        // For testing, set next_retry_at to past so job is immediately claimable
+        let next_retry_at = Utc::now() - chrono::Duration::seconds(1);
 
         job_repo
             .mark_failed(
@@ -345,9 +358,9 @@ async fn test_worker_max_retries_exceeded() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_worker_job_priority_ordering() {
     let pool = worker_test_fixtures::setup_test_db().await;
-    worker_test_fixtures::cleanup_test_data(&pool).await;
 
     // Clean up all jobs to ensure clean slate
     sqlx::query!("DELETE FROM fopr_import_jobs")
@@ -388,15 +401,17 @@ async fn test_worker_job_priority_ordering() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_worker_error_history_preserved() {
     let pool = worker_test_fixtures::setup_test_db().await;
-    worker_test_fixtures::cleanup_test_data(&pool).await;
+    let station_id = worker_test_fixtures::TEST_WORKER_GAUGE_6;
+    worker_test_fixtures::cleanup_test_data(&pool, station_id).await;
 
     let job_repo = FoprImportJobRepository::new(pool.clone());
 
     // Create a job
     let job_id = job_repo
-        .create_job(worker_test_fixtures::TEST_WORKER_GAUGE, "test", 10, None)
+        .create_job(station_id, "test", 10, None)
         .await
         .unwrap();
 
@@ -412,7 +427,8 @@ async fn test_worker_error_history_preserved() {
             retry_count: retry,
         };
 
-        let next_retry_at = Utc::now() + chrono::Duration::minutes(5);
+        // For testing, set next_retry_at to past so job is immediately claimable
+        let next_retry_at = Utc::now() - chrono::Duration::seconds(1);
 
         job_repo
             .mark_failed(

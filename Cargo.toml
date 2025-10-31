@@ -57,3 +57,4 @@ backon = "1.6.0"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "chrono"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+serial_test = "3.2.0"
