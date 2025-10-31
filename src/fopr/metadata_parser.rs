@@ -478,22 +478,23 @@ mod tests {
 
     #[test]
     fn test_validate_longitude_too_far_west() {
-        assert!(validate_longitude(-115.0).is_err());
+        assert!(validate_longitude(-116.0).is_err()); // Beyond AZ western border
     }
 
     #[test]
     fn test_validate_elevation_valid() {
-        assert!(validate_elevation(1465).is_ok());
+        assert!(validate_elevation(1465).is_ok()); // Phoenix area
+        assert!(validate_elevation(5205).is_ok()); // Northern AZ (the one that was failing)
     }
 
     #[test]
     fn test_validate_elevation_too_low() {
-        assert!(validate_elevation(100).is_err());
+        assert!(validate_elevation(-10).is_err()); // Below sea level (invalid for AZ)
     }
 
     #[test]
     fn test_validate_elevation_too_high() {
-        assert!(validate_elevation(5000).is_err());
+        assert!(validate_elevation(14000).is_err()); // Above Humphreys Peak (12,637 ft)
     }
 
     #[test]
