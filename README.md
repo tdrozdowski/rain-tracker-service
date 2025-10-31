@@ -1,5 +1,8 @@
 # Rain Tracker Service
 
+[![CI/CD Pipeline](https://github.com/tdrozdowski/rain-tracker-service/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/tdrozdowski/rain-tracker-service/actions/workflows/ci-cd.yml)
+[![codecov](https://codecov.io/gh/tdrozdowski/rain-tracker-service/branch/master/graph/badge.svg)](https://codecov.io/gh/tdrozdowski/rain-tracker-service)
+
 A Rust-based service that tracks rain gauge readings from the Maricopa County Flood Control District and provides a RESTful API for querying rainfall data by rain year or calendar year.
 
 ## Features
