@@ -13,6 +13,7 @@ use rain_tracker_service::fetcher::RainReading;
 use rain_tracker_service::fopr::MetaStatsData;
 use rain_tracker_service::services::{GaugeService, ReadingService};
 use serde_json::Value;
+use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use tower::ServiceExt; // For `oneshot`
@@ -164,6 +165,7 @@ async fn create_test_app() -> (axum::Router, PgPool) {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_health_endpoint() {
     let (app, _pool) = create_test_app().await;
 
@@ -186,6 +188,7 @@ async fn test_health_endpoint() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_get_latest_reading_not_found() {
     let (app, _pool) = create_test_app().await;
 
@@ -207,6 +210,7 @@ async fn test_get_latest_reading_not_found() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_get_latest_reading_success() {
     let (app, pool) = create_test_app().await;
     api_test_fixtures::cleanup_test_data(&pool).await;
@@ -256,6 +260,7 @@ async fn test_get_latest_reading_success() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_water_year_endpoint() {
     let (app, pool) = create_test_app().await;
     api_test_fixtures::cleanup_test_data(&pool).await;
@@ -364,6 +369,7 @@ fn month_date_range(year: i32, month: u32) -> (chrono::DateTime<Utc>, chrono::Da
 }
 
 #[tokio::test]
+#[serial]
 async fn test_calendar_year_endpoint() {
     let (app, pool) = create_test_app().await;
     api_test_fixtures::cleanup_test_data(&pool).await;
@@ -447,6 +453,7 @@ async fn test_calendar_year_endpoint() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_get_gauge_by_id() {
     let (app, _pool) = create_test_app().await;
 
@@ -474,6 +481,7 @@ async fn test_get_gauge_by_id() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_get_gauge_by_id_not_found() {
     let (app, _pool) = create_test_app().await;
 
@@ -491,6 +499,7 @@ async fn test_get_gauge_by_id_not_found() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_get_all_gauges_default_pagination() {
     let (app, _pool) = create_test_app().await;
 
@@ -517,6 +526,7 @@ async fn test_get_all_gauges_default_pagination() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_get_all_gauges_custom_pagination() {
     let (app, _pool) = create_test_app().await;
 
@@ -541,6 +551,7 @@ async fn test_get_all_gauges_custom_pagination() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_openapi_spec_endpoint() {
     let (app, _pool) = create_test_app().await;
 
@@ -567,6 +578,7 @@ async fn test_openapi_spec_endpoint() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_redoc_ui_endpoint() {
     let (app, _pool) = create_test_app().await;
 

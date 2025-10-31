@@ -6,6 +6,7 @@ use rain_tracker_service::db::{GaugeRepository, MonthlyRainfallRepository, Readi
 use rain_tracker_service::fetcher::RainReading;
 use rain_tracker_service::fopr::MetaStatsData;
 use rain_tracker_service::services::ReadingService;
+use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
@@ -123,6 +124,7 @@ mod test_fixtures {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_insert_and_retrieve_readings() {
     // Setup test database with fixtures
     let pool = test_fixtures::setup_test_db().await;
@@ -177,6 +179,7 @@ async fn test_insert_and_retrieve_readings() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_water_year_queries() {
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
@@ -212,6 +215,7 @@ async fn test_water_year_queries() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_water_year_total_rainfall_calculation() {
     use chrono::TimeZone;
 
@@ -297,6 +301,7 @@ async fn test_water_year_total_rainfall_calculation() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_calendar_year_total_rainfall_calculation() {
     use chrono::TimeZone;
 
@@ -421,6 +426,7 @@ async fn test_calendar_year_total_rainfall_calculation() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_calendar_year_queries() {
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
