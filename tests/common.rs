@@ -2,19 +2,18 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio::sync::OnceCell;
 
-static POOL: OnceCell<PgPool> = OnceCell::const_new();
+static INIT: OnceCell<()> = OnceCell::const_new();
 
-/// Get a shared connection pool for all tests
-/// Pool is created once and reused across tests
-pub async fn test_pool() -> &'static PgPool {
-    POOL.get_or_init(|| async {
+/// Initialize the test database (run migrations, cleanup)
+/// This runs once per test run
+async fn init_test_db() {
+    INIT.get_or_init(|| async {
         let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
             "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
         });
 
         let pool = PgPoolOptions::new()
-            .max_connections(20) // Increased for parallel tests
-            .acquire_timeout(std::time::Duration::from_secs(60))
+            .max_connections(5)
             .connect(&database_url)
             .await
             .expect("Failed to connect to test database");
@@ -31,16 +30,30 @@ pub async fn test_pool() -> &'static PgPool {
             .await
             .ok();
 
-        pool
+        pool.close().await;
     })
-    .await
+    .await;
+}
+
+/// Get a NEW connection pool for each test
+/// This avoids connection exhaustion issues
+pub async fn test_pool() -> PgPool {
+    init_test_db().await;
+
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://postgres:password@localhost:5432/rain_tracker_test".to_string()
+    });
+
+    PgPoolOptions::new()
+        .max_connections(10)
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to test database")
 }
 
 /// Begin a test transaction that will automatically rollback
 pub async fn test_transaction() -> Transaction<'static, Postgres> {
-    test_pool()
-        .await
-        .begin()
-        .await
-        .expect("Failed to begin transaction")
+    // Create a pool and leak it so the transaction can have 'static lifetime
+    let pool = Box::leak(Box::new(test_pool().await));
+    pool.begin().await.expect("Failed to begin transaction")
 }

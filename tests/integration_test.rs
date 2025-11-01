@@ -17,7 +17,8 @@ async fn insert_test_gauge(
     station_id: &str,
     station_name: &str,
 ) {
-    let gauge_repo = GaugeRepository::new(common::test_pool().await.clone());
+    let pool = common::test_pool().await;
+    let gauge_repo = GaugeRepository::new(pool.clone());
 
     let metadata = MetaStatsData {
         station_id: station_id.to_string(),
@@ -70,6 +71,7 @@ async fn insert_reading_tx(
 }
 
 #[tokio::test]
+#[serial]
 async fn test_insert_and_retrieve_readings() {
     // Begin transaction for test isolation
     let mut tx = common::test_transaction().await;
@@ -119,12 +121,13 @@ async fn test_insert_and_retrieve_readings() {
         "DELETE FROM rain_readings WHERE station_id = $1",
         test_station_id
     )
-    .execute(pool)
+    .execute(&pool)
     .await
     .ok();
 }
 
 #[tokio::test]
+#[serial]
 async fn test_water_year_queries() {
     // Begin transaction for test isolation
     let mut tx = common::test_transaction().await;
@@ -250,14 +253,14 @@ async fn test_water_year_total_rainfall_calculation() {
         "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
         test_station_id
     )
-    .execute(pool)
+    .execute(&pool)
     .await
     .ok();
     sqlx::query!(
         "DELETE FROM rain_readings WHERE station_id = $1",
         test_station_id
     )
-    .execute(pool)
+    .execute(&pool)
     .await
     .ok();
 }
@@ -354,19 +357,20 @@ async fn test_calendar_year_total_rainfall_calculation() {
         "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
         test_station_id
     )
-    .execute(pool)
+    .execute(&pool)
     .await
     .ok();
     sqlx::query!(
         "DELETE FROM rain_readings WHERE station_id = $1",
         test_station_id
     )
-    .execute(pool)
+    .execute(&pool)
     .await
     .ok();
 }
 
 #[tokio::test]
+#[serial]
 async fn test_calendar_year_queries() {
     // Use committed data since service layer needs to see it
     let pool = common::test_pool().await;
