@@ -8,6 +8,7 @@ use rain_tracker_service::db::{GaugeRepository, MonthlyRainfallRepository, Readi
 use rain_tracker_service::fetcher::RainReading;
 use rain_tracker_service::fopr::MetaStatsData;
 use rain_tracker_service::services::ReadingService;
+use serial_test::serial;
 use sqlx::{Postgres, Transaction};
 
 /// Helper to insert a test gauge using a transaction
@@ -114,10 +115,13 @@ async fn test_insert_and_retrieve_readings() {
     assert!(latest.is_some());
 
     // Cleanup (since we committed, we need manual cleanup)
-    sqlx::query!("DELETE FROM rain_readings WHERE station_id = $1", test_station_id)
-        .execute(pool)
-        .await
-        .ok();
+    sqlx::query!(
+        "DELETE FROM rain_readings WHERE station_id = $1",
+        test_station_id
+    )
+    .execute(pool)
+    .await
+    .ok();
 }
 
 #[tokio::test]
@@ -150,6 +154,7 @@ async fn test_water_year_queries() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_water_year_total_rainfall_calculation() {
     // Use committed data since service layer needs to see it
     let pool = common::test_pool().await;
@@ -181,7 +186,10 @@ async fn test_water_year_total_rainfall_calculation() {
             data_quality_remarks: Some("Test gauge".to_string()),
             fopr_metadata: serde_json::Map::new(),
         };
-        gauge_repo.upsert_gauge_metadata_tx(&mut tx, &metadata).await.unwrap();
+        gauge_repo
+            .upsert_gauge_metadata_tx(&mut tx, &metadata)
+            .await
+            .unwrap();
 
         // Create test readings for water year 2024
         let readings = vec![
@@ -238,17 +246,24 @@ async fn test_water_year_total_rainfall_calculation() {
     assert_eq!(summary.total_readings, 3);
 
     // Cleanup
-    sqlx::query!("DELETE FROM monthly_rainfall_summary WHERE station_id = $1", test_station_id)
-        .execute(pool)
-        .await
-        .ok();
-    sqlx::query!("DELETE FROM rain_readings WHERE station_id = $1", test_station_id)
-        .execute(pool)
-        .await
-        .ok();
+    sqlx::query!(
+        "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
+        test_station_id
+    )
+    .execute(pool)
+    .await
+    .ok();
+    sqlx::query!(
+        "DELETE FROM rain_readings WHERE station_id = $1",
+        test_station_id
+    )
+    .execute(pool)
+    .await
+    .ok();
 }
 
 #[tokio::test]
+#[serial]
 async fn test_calendar_year_total_rainfall_calculation() {
     // Use committed data since service layer needs to see it
     let pool = common::test_pool().await;
@@ -305,7 +320,14 @@ async fn test_calendar_year_total_rainfall_calculation() {
     let monthly_rainfall_repo = MonthlyRainfallRepository::new(pool.clone());
 
     // Populate monthly aggregates
-    for (year, month) in [(2024, 12), (2025, 1), (2025, 3), (2025, 9), (2025, 10), (2025, 12)] {
+    for (year, month) in [
+        (2024, 12),
+        (2025, 1),
+        (2025, 3),
+        (2025, 9),
+        (2025, 10),
+        (2025, 12),
+    ] {
         let (start, end) = month_date_range(year, month);
         monthly_rainfall_repo
             .recalculate_monthly_summary(test_station_id, year, month as i32, start, end)
@@ -328,14 +350,20 @@ async fn test_calendar_year_total_rainfall_calculation() {
     );
 
     // Cleanup
-    sqlx::query!("DELETE FROM monthly_rainfall_summary WHERE station_id = $1", test_station_id)
-        .execute(pool)
-        .await
-        .ok();
-    sqlx::query!("DELETE FROM rain_readings WHERE station_id = $1", test_station_id)
-        .execute(pool)
-        .await
-        .ok();
+    sqlx::query!(
+        "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
+        test_station_id
+    )
+    .execute(pool)
+    .await
+    .ok();
+    sqlx::query!(
+        "DELETE FROM rain_readings WHERE station_id = $1",
+        test_station_id
+    )
+    .execute(pool)
+    .await
+    .ok();
 }
 
 #[tokio::test]

@@ -13,7 +13,8 @@ pub async fn test_pool() -> &'static PgPool {
         });
 
         let pool = PgPoolOptions::new()
-            .max_connections(10) // Increase for parallel tests
+            .max_connections(20) // Increased for parallel tests
+            .acquire_timeout(std::time::Duration::from_secs(60))
             .connect(&database_url)
             .await
             .expect("Failed to connect to test database");
@@ -23,6 +24,12 @@ pub async fn test_pool() -> &'static PgPool {
             .run(&pool)
             .await
             .expect("Failed to run migrations");
+
+        // Clean up any leftover test data
+        sqlx::query("TRUNCATE TABLE monthly_rainfall_summary, rain_readings CASCADE")
+            .execute(&pool)
+            .await
+            .ok();
 
         pool
     })
