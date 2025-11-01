@@ -27,10 +27,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@beta
         with:
-          anthropic_api_key: $
-          allowed_tools: 'mcp__github__create_pull_request'
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_tools: 'mcp__github__create_pull_request,mcp__github__get_file_contents,mcp__github__search_code,mcp__github__list_commits'
