@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use tracing::{debug, info, instrument};
 
 use crate::db::DbError;
@@ -278,6 +278,241 @@ impl FoprImportJobRepository {
             "#
         )
         .fetch_all(&self.pool)
+        .await?;
+
+        debug!("Found {} pending jobs", jobs.len());
+        Ok(jobs)
+    }
+
+    // ============================================================
+    // Transaction-aware methods for testing
+    // ============================================================
+
+    /// Create a new import job using a transaction (for testing)
+    #[instrument(skip(self, tx, gauge_summary), fields(station_id = %station_id))]
+    pub async fn create_job_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        station_id: &str,
+        source: &str,
+        priority: i32,
+        gauge_summary: Option<&FetchedGauge>,
+    ) -> Result<i32, DbError> {
+        debug!("Creating FOPR import job for station {}", station_id);
+
+        let gauge_summary_json = gauge_summary
+            .map(|g| serde_json::to_value(g).unwrap())
+            .unwrap_or(serde_json::Value::Null);
+
+        let job_id = sqlx::query_scalar!(
+            r#"
+            INSERT INTO fopr_import_jobs (
+                station_id, status, priority, source, gauge_summary
+            )
+            VALUES ($1, 'pending', $2, $3, $4)
+            RETURNING id
+            "#,
+            station_id,
+            priority,
+            source,
+            gauge_summary_json
+        )
+        .fetch_one(&mut **tx)
+        .await?;
+
+        info!(
+            "Created FOPR import job {} for station {}",
+            job_id, station_id
+        );
+        Ok(job_id)
+    }
+
+    /// Claim next job using a transaction (for testing)
+    #[instrument(skip(self, tx))]
+    pub async fn claim_next_job_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<Option<FoprImportJob>, DbError> {
+        debug!("Attempting to claim next job");
+
+        let job = sqlx::query_as!(
+            FoprImportJob,
+            r#"
+            UPDATE fopr_import_jobs
+            SET status = 'in_progress',
+                started_at = NOW()
+            WHERE id = (
+                SELECT id
+                FROM fopr_import_jobs
+                WHERE status = 'pending'
+                   OR (status = 'failed' AND retry_count < max_retries AND next_retry_at <= NOW())
+                ORDER BY priority DESC, created_at ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING
+                id, station_id, status AS "status: JobStatus",
+                priority, created_at, started_at, completed_at,
+                error_message, error_history, retry_count, max_retries, next_retry_at,
+                source, gauge_summary, import_stats
+            "#,
+        )
+        .fetch_optional(&mut **tx)
+        .await?;
+
+        if let Some(ref j) = job {
+            info!("Claimed job {} for station {}", j.id, j.station_id);
+        } else {
+            debug!("No jobs available to claim");
+        }
+
+        Ok(job)
+    }
+
+    /// Mark job as completed using a transaction (for testing)
+    #[instrument(skip(self, tx, stats), fields(job_id = job_id))]
+    pub async fn mark_completed_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        job_id: i32,
+        stats: &ImportStats,
+    ) -> Result<(), DbError> {
+        debug!("Marking job {} as completed", job_id);
+
+        let stats_json = serde_json::to_value(stats).unwrap();
+
+        sqlx::query!(
+            r#"
+            UPDATE fopr_import_jobs
+            SET status = 'completed',
+                completed_at = NOW(),
+                import_stats = $2,
+                error_message = NULL
+            WHERE id = $1
+            "#,
+            job_id,
+            stats_json
+        )
+        .execute(&mut **tx)
+        .await?;
+
+        info!("Job {} marked as completed", job_id);
+        Ok(())
+    }
+
+    /// Mark job as failed using a transaction (for testing)
+    #[instrument(skip(self, tx, error_entry), fields(job_id = job_id))]
+    pub async fn mark_failed_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        job_id: i32,
+        error_message: &str,
+        error_entry: &ErrorHistoryEntry,
+        retry_count: i32,
+        next_retry_at: DateTime<Utc>,
+    ) -> Result<(), DbError> {
+        debug!("Marking job {} as failed (retry {})", job_id, retry_count);
+
+        let error_entry_json = serde_json::to_value(error_entry).unwrap();
+
+        sqlx::query!(
+            r#"
+            UPDATE fopr_import_jobs
+            SET status = 'failed',
+                error_message = $2,
+                error_history = error_history || $3::jsonb,
+                retry_count = $4,
+                next_retry_at = $5
+            WHERE id = $1
+            "#,
+            job_id,
+            error_message,
+            error_entry_json,
+            retry_count,
+            next_retry_at
+        )
+        .execute(&mut **tx)
+        .await?;
+
+        info!(
+            "Job {} marked as failed, retry {} scheduled for {}",
+            job_id, retry_count, next_retry_at
+        );
+        Ok(())
+    }
+
+    /// Check if job exists using a transaction (for testing)
+    #[instrument(skip(self, tx), fields(station_id = %station_id))]
+    pub async fn job_exists_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        station_id: &str,
+    ) -> Result<bool, DbError> {
+        let exists = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM fopr_import_jobs
+                WHERE station_id = $1
+                  AND status IN ('pending', 'in_progress')
+            )
+            "#,
+            station_id
+        )
+        .fetch_one(&mut **tx)
+        .await?
+        .unwrap_or(false);
+
+        debug!("Job exists check for station {}: {}", station_id, exists);
+        Ok(exists)
+    }
+
+    /// Get job by ID using a transaction (for testing)
+    #[instrument(skip(self, tx), fields(job_id = job_id))]
+    pub async fn get_job_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        job_id: i32,
+    ) -> Result<Option<FoprImportJob>, DbError> {
+        let job = sqlx::query_as!(
+            FoprImportJob,
+            r#"
+            SELECT
+                id, station_id, status AS "status: JobStatus",
+                priority, created_at, started_at, completed_at,
+                error_message, error_history, retry_count, max_retries, next_retry_at,
+                source, gauge_summary, import_stats
+            FROM fopr_import_jobs
+            WHERE id = $1
+            "#,
+            job_id
+        )
+        .fetch_optional(&mut **tx)
+        .await?;
+
+        Ok(job)
+    }
+
+    /// Get all pending jobs using a transaction (for testing)
+    #[instrument(skip(self, tx))]
+    pub async fn get_pending_jobs_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<Vec<FoprImportJob>, DbError> {
+        let jobs = sqlx::query_as!(
+            FoprImportJob,
+            r#"
+            SELECT
+                id, station_id, status AS "status: JobStatus",
+                priority, created_at, started_at, completed_at,
+                error_message, error_history, retry_count, max_retries, next_retry_at,
+                source, gauge_summary, import_stats
+            FROM fopr_import_jobs
+            WHERE status IN ('pending', 'failed')
+            ORDER BY priority DESC, created_at ASC
+            "#
+        )
+        .fetch_all(&mut **tx)
         .await?;
 
         debug!("Found {} pending jobs", jobs.len());
