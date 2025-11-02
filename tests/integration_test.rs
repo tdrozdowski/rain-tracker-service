@@ -8,7 +8,6 @@ use rain_tracker_service::db::{GaugeRepository, MonthlyRainfallRepository, Readi
 use rain_tracker_service::fetcher::RainReading;
 use rain_tracker_service::fopr::MetaStatsData;
 use rain_tracker_service::services::ReadingService;
-use serial_test::serial;
 use sqlx::{Postgres, Transaction};
 
 /// Helper to insert a test gauge using a transaction
@@ -71,7 +70,6 @@ async fn insert_reading_tx(
 }
 
 #[tokio::test]
-#[serial]
 async fn test_insert_and_retrieve_readings() {
     // Begin transaction for test isolation
     let mut tx = common::test_transaction().await;
@@ -127,7 +125,6 @@ async fn test_insert_and_retrieve_readings() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_water_year_queries() {
     // Begin transaction for test isolation
     let mut tx = common::test_transaction().await;
@@ -157,7 +154,6 @@ async fn test_water_year_queries() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_water_year_total_rainfall_calculation() {
     // Use committed data since service layer needs to see it
     let pool = common::test_pool().await;
@@ -266,7 +262,6 @@ async fn test_water_year_total_rainfall_calculation() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_calendar_year_total_rainfall_calculation() {
     // Use committed data since service layer needs to see it
     let pool = common::test_pool().await;
@@ -370,7 +365,6 @@ async fn test_calendar_year_total_rainfall_calculation() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_calendar_year_queries() {
     // Use committed data since service layer needs to see it
     let pool = common::test_pool().await;

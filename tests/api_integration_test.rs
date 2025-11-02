@@ -13,7 +13,6 @@ use rain_tracker_service::fetcher::RainReading;
 use rain_tracker_service::fopr::MetaStatsData;
 use rain_tracker_service::services::{GaugeService, ReadingService};
 use serde_json::Value;
-use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use tower::ServiceExt; // For `oneshot`
@@ -25,6 +24,9 @@ mod api_test_fixtures {
 
     pub const TEST_API_GAUGE: &str = "TEST_API_001";
     pub const TEST_API_GAUGE_NOT_FOUND: &str = "TEST_API_999"; // For negative tests
+    pub const TEST_API_LATEST: &str = "TEST_API_LATEST";
+    pub const TEST_API_WATER: &str = "TEST_API_WATER";
+    pub const TEST_API_CALENDAR: &str = "TEST_API_CALENDAR";
 
     /// Setup test database with fixtures
     pub async fn setup_test_db() -> PgPool {
@@ -44,20 +46,23 @@ mod api_test_fixtures {
             .await
             .expect("Failed to run migrations");
 
-        // Insert test gauge
-        insert_test_gauge(&pool).await;
+        // Insert all test gauges
+        insert_test_gauge(&pool, TEST_API_GAUGE, "Test API Gauge").await;
+        insert_test_gauge(&pool, TEST_API_LATEST, "Test API Latest").await;
+        insert_test_gauge(&pool, TEST_API_WATER, "Test API Water Year").await;
+        insert_test_gauge(&pool, TEST_API_CALENDAR, "Test API Calendar Year").await;
 
         pool
     }
 
     /// Insert test gauge for API tests
-    async fn insert_test_gauge(pool: &PgPool) {
+    async fn insert_test_gauge(pool: &PgPool, station_id: &str, name: &str) {
         let gauge_repo = GaugeRepository::new(pool.clone());
 
         // Check if gauge already exists in gauge_summaries
         let exists = sqlx::query_scalar!(
             r#"SELECT COUNT(*) FROM gauge_summaries WHERE station_id = $1"#,
-            TEST_API_GAUGE
+            station_id
         )
         .fetch_one(pool)
         .await
@@ -70,8 +75,8 @@ mod api_test_fixtures {
 
         // Create test gauge metadata for gauges table
         let metadata = MetaStatsData {
-            station_id: TEST_API_GAUGE.to_string(),
-            station_name: "Test API Gauge".to_string(),
+            station_id: station_id.to_string(),
+            station_name: name.to_string(),
             previous_station_ids: vec![],
             station_type: "Rain".to_string(),
             latitude: 33.5,
@@ -108,8 +113,8 @@ mod api_test_fixtures {
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
             ON CONFLICT (station_id) DO NOTHING
             "#,
-            TEST_API_GAUGE,
-            "Test API Gauge",
+            station_id,
+            name,
             "Phoenix",
             Some(1000_i32),
             Some("Test location for API tests"),
@@ -120,25 +125,6 @@ mod api_test_fixtures {
         .execute(pool)
         .await
         .ok(); // Ignore errors from duplicate key
-    }
-
-    /// Clean up test data for API tests
-    pub async fn cleanup_test_data(pool: &PgPool) {
-        sqlx::query!(
-            "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
-            TEST_API_GAUGE
-        )
-        .execute(pool)
-        .await
-        .ok();
-
-        sqlx::query!(
-            "DELETE FROM rain_readings WHERE station_id = $1",
-            TEST_API_GAUGE
-        )
-        .execute(pool)
-        .await
-        .ok();
     }
 }
 
@@ -165,7 +151,6 @@ async fn create_test_app() -> (axum::Router, PgPool) {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_health_endpoint() {
     let (app, _pool) = create_test_app().await;
 
@@ -188,7 +173,6 @@ async fn test_health_endpoint() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_get_latest_reading_not_found() {
     let (app, _pool) = create_test_app().await;
 
@@ -210,12 +194,10 @@ async fn test_get_latest_reading_not_found() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_get_latest_reading_success() {
     let (app, pool) = create_test_app().await;
-    api_test_fixtures::cleanup_test_data(&pool).await;
 
-    // Insert a test reading
+    // Use unique station ID for this test to avoid parallel test conflicts
     let test_reading = RainReading {
         reading_datetime: Utc::now(),
         cumulative_inches: 2.5,
@@ -230,7 +212,7 @@ async fn test_get_latest_reading_success() {
         test_reading.reading_datetime,
         test_reading.cumulative_inches,
         test_reading.incremental_inches,
-        api_test_fixtures::TEST_API_GAUGE
+        api_test_fixtures::TEST_API_LATEST
     )
     .execute(&pool)
     .await
@@ -241,7 +223,7 @@ async fn test_get_latest_reading_success() {
             Request::builder()
                 .uri(format!(
                     "/api/v1/readings/{}/latest",
-                    api_test_fixtures::TEST_API_GAUGE
+                    api_test_fixtures::TEST_API_LATEST
                 ))
                 .body(Body::empty())
                 .unwrap(),
@@ -254,31 +236,39 @@ async fn test_get_latest_reading_success() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
+    // Verify we got a reading
     assert_eq!(json["cumulative_inches"], 2.5);
     assert_eq!(json["incremental_inches"], 0.1);
-    assert_eq!(json["station_id"], api_test_fixtures::TEST_API_GAUGE);
+    assert_eq!(json["station_id"], api_test_fixtures::TEST_API_LATEST);
+
+    // Cleanup
+    sqlx::query!(
+        "DELETE FROM rain_readings WHERE station_id = $1",
+        api_test_fixtures::TEST_API_LATEST
+    )
+    .execute(&pool)
+    .await
+    .ok();
 }
 
 #[tokio::test]
-#[serial]
 async fn test_water_year_endpoint() {
     let (app, pool) = create_test_app().await;
-    api_test_fixtures::cleanup_test_data(&pool).await;
 
-    // Insert test readings for water year 2024 (Oct 2023 - Sep 2024)
+    // Use unique station ID for this test to avoid parallel test conflicts
     let readings = vec![
         (
-            Utc.with_ymd_and_hms(2023, 10, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2123, 10, 15, 12, 0, 0).unwrap(),
             0.5,
             0.5,
         ),
         (
-            Utc.with_ymd_and_hms(2024, 3, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2124, 3, 15, 12, 0, 0).unwrap(),
             2.3,
             1.8,
         ),
         (
-            Utc.with_ymd_and_hms(2024, 9, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2124, 9, 15, 12, 0, 0).unwrap(),
             5.0,
             2.7,
         ),
@@ -293,7 +283,7 @@ async fn test_water_year_endpoint() {
             datetime,
             cumulative,
             incremental,
-            api_test_fixtures::TEST_API_GAUGE
+            api_test_fixtures::TEST_API_WATER
         )
         .execute(&pool)
         .await
@@ -302,19 +292,19 @@ async fn test_water_year_endpoint() {
 
     // Populate monthly aggregates
     let monthly_rainfall_repo = MonthlyRainfallRepository::new(pool.clone());
-    let (start, end) = month_date_range(2023, 10);
+    let (start, end) = month_date_range(2123, 10);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(api_test_fixtures::TEST_API_GAUGE, 2023, 10, start, end)
+        .recalculate_monthly_summary(api_test_fixtures::TEST_API_WATER, 2123, 10, start, end)
         .await
         .unwrap();
-    let (start, end) = month_date_range(2024, 3);
+    let (start, end) = month_date_range(2124, 3);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(api_test_fixtures::TEST_API_GAUGE, 2024, 3, start, end)
+        .recalculate_monthly_summary(api_test_fixtures::TEST_API_WATER, 2124, 3, start, end)
         .await
         .unwrap();
-    let (start, end) = month_date_range(2024, 9);
+    let (start, end) = month_date_range(2124, 9);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(api_test_fixtures::TEST_API_GAUGE, 2024, 9, start, end)
+        .recalculate_monthly_summary(api_test_fixtures::TEST_API_WATER, 2124, 9, start, end)
         .await
         .unwrap();
 
@@ -322,8 +312,8 @@ async fn test_water_year_endpoint() {
         .oneshot(
             Request::builder()
                 .uri(format!(
-                    "/api/v1/readings/{}/water-year/2024",
-                    api_test_fixtures::TEST_API_GAUGE
+                    "/api/v1/readings/{}/water-year/2124",
+                    api_test_fixtures::TEST_API_WATER
                 ))
                 .body(Body::empty())
                 .unwrap(),
@@ -336,10 +326,26 @@ async fn test_water_year_endpoint() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["water_year"], 2024);
+    assert_eq!(json["water_year"], 2124);
     assert_eq!(json["total_readings"], 3);
     assert_eq!(json["total_rainfall_inches"], 5.0);
     assert!(json["readings"].is_array());
+
+    // Cleanup
+    sqlx::query!(
+        "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
+        api_test_fixtures::TEST_API_WATER
+    )
+    .execute(&pool)
+    .await
+    .ok();
+    sqlx::query!(
+        "DELETE FROM rain_readings WHERE station_id = $1",
+        api_test_fixtures::TEST_API_WATER
+    )
+    .execute(&pool)
+    .await
+    .ok();
 }
 
 /// Calculate date range for a specific month (helper for tests)
@@ -369,25 +375,23 @@ fn month_date_range(year: i32, month: u32) -> (chrono::DateTime<Utc>, chrono::Da
 }
 
 #[tokio::test]
-#[serial]
 async fn test_calendar_year_endpoint() {
     let (app, pool) = create_test_app().await;
-    api_test_fixtures::cleanup_test_data(&pool).await;
 
-    // Insert test readings for calendar year 2024
+    // Use unique station ID for this test to avoid parallel test conflicts
     let readings = vec![
         (
-            Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2125, 1, 15, 12, 0, 0).unwrap(),
             0.5,
             0.5,
         ),
         (
-            Utc.with_ymd_and_hms(2024, 6, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2125, 6, 15, 12, 0, 0).unwrap(),
             2.0,
             1.5,
         ),
         (
-            Utc.with_ymd_and_hms(2024, 12, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2125, 12, 15, 12, 0, 0).unwrap(),
             4.5,
             2.5,
         ),
@@ -402,7 +406,7 @@ async fn test_calendar_year_endpoint() {
             datetime,
             cumulative,
             incremental,
-            api_test_fixtures::TEST_API_GAUGE
+            api_test_fixtures::TEST_API_CALENDAR
         )
         .execute(&pool)
         .await
@@ -411,19 +415,19 @@ async fn test_calendar_year_endpoint() {
 
     // Populate monthly aggregates
     let monthly_rainfall_repo = MonthlyRainfallRepository::new(pool.clone());
-    let (start, end) = month_date_range(2024, 1);
+    let (start, end) = month_date_range(2125, 1);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(api_test_fixtures::TEST_API_GAUGE, 2024, 1, start, end)
+        .recalculate_monthly_summary(api_test_fixtures::TEST_API_CALENDAR, 2125, 1, start, end)
         .await
         .unwrap();
-    let (start, end) = month_date_range(2024, 6);
+    let (start, end) = month_date_range(2125, 6);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(api_test_fixtures::TEST_API_GAUGE, 2024, 6, start, end)
+        .recalculate_monthly_summary(api_test_fixtures::TEST_API_CALENDAR, 2125, 6, start, end)
         .await
         .unwrap();
-    let (start, end) = month_date_range(2024, 12);
+    let (start, end) = month_date_range(2125, 12);
     monthly_rainfall_repo
-        .recalculate_monthly_summary(api_test_fixtures::TEST_API_GAUGE, 2024, 12, start, end)
+        .recalculate_monthly_summary(api_test_fixtures::TEST_API_CALENDAR, 2125, 12, start, end)
         .await
         .unwrap();
 
@@ -431,8 +435,8 @@ async fn test_calendar_year_endpoint() {
         .oneshot(
             Request::builder()
                 .uri(format!(
-                    "/api/v1/readings/{}/calendar-year/2024",
-                    api_test_fixtures::TEST_API_GAUGE
+                    "/api/v1/readings/{}/calendar-year/2125",
+                    api_test_fixtures::TEST_API_CALENDAR
                 ))
                 .body(Body::empty())
                 .unwrap(),
@@ -445,15 +449,30 @@ async fn test_calendar_year_endpoint() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["calendar_year"], 2024);
+    assert_eq!(json["calendar_year"], 2125);
     assert_eq!(json["total_readings"], 3);
     assert_eq!(json["year_to_date_rainfall_inches"], 4.5);
     assert!(json["monthly_summaries"].is_array());
     assert!(json["readings"].is_array());
+
+    // Cleanup
+    sqlx::query!(
+        "DELETE FROM monthly_rainfall_summary WHERE station_id = $1",
+        api_test_fixtures::TEST_API_CALENDAR
+    )
+    .execute(&pool)
+    .await
+    .ok();
+    sqlx::query!(
+        "DELETE FROM rain_readings WHERE station_id = $1",
+        api_test_fixtures::TEST_API_CALENDAR
+    )
+    .execute(&pool)
+    .await
+    .ok();
 }
 
 #[tokio::test]
-#[serial]
 async fn test_get_gauge_by_id() {
     let (app, _pool) = create_test_app().await;
 
@@ -481,7 +500,6 @@ async fn test_get_gauge_by_id() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_get_gauge_by_id_not_found() {
     let (app, _pool) = create_test_app().await;
 
@@ -499,7 +517,6 @@ async fn test_get_gauge_by_id_not_found() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_get_all_gauges_default_pagination() {
     let (app, _pool) = create_test_app().await;
 
@@ -526,7 +543,6 @@ async fn test_get_all_gauges_default_pagination() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_get_all_gauges_custom_pagination() {
     let (app, _pool) = create_test_app().await;
 
@@ -551,7 +567,6 @@ async fn test_get_all_gauges_custom_pagination() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_openapi_spec_endpoint() {
     let (app, _pool) = create_test_app().await;
 
@@ -578,7 +593,6 @@ async fn test_openapi_spec_endpoint() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_redoc_ui_endpoint() {
     let (app, _pool) = create_test_app().await;
 

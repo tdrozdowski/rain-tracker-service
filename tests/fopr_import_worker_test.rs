@@ -9,6 +9,15 @@ use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
+// NOTE: All tests in this file use #[serial] because they test a shared job queue.
+// The claim_next_job() function claims ANY pending job (highest priority first),
+// not job-specific queries. Running these tests in parallel would cause:
+// - Test A's jobs being claimed by Test B
+// - Tests that delete ALL jobs interfering with other tests
+// - Race conditions in priority ordering tests
+// While this means these 8 tests run serially, it's necessary to accurately test
+// the job queue behavior. The other 16 integration/API tests run in parallel.
+
 /// Test fixture module for worker tests
 mod worker_test_fixtures {
     use super::*;
