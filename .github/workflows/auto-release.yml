@@ -46,13 +46,13 @@ jobs:
       - name: Get latest version
         id: get_version
         run: |
-          # Get the latest tag, default to v0.0.0 if none exists
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          # Get the latest tag, default to 0.0.0 if none exists
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "Latest tag: $LATEST_TAG"
 
-          # Strip 'v' prefix for version comparison
-          LATEST_VERSION=${LATEST_TAG#v}
+          # Version is the tag itself (no 'v' prefix)
+          LATEST_VERSION=$LATEST_TAG
           echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
 
       - name: Determine version bump type
@@ -170,9 +170,9 @@ jobs:
         if: steps.check_exists.outputs.skip_release == 'false'
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
-          TAG="v$NEW_VERSION"
+          TAG="$NEW_VERSION"
 
-          # Create annotated tag
+          # Create annotated tag (no 'v' prefix)
           git tag -a "$TAG" -m "Release $TAG"
 
           # Push commit and tag
@@ -192,7 +192,7 @@ jobs:
           echo "" >> CHANGELOG.md
 
           # Get commits since last tag, categorized
-          if [ "$PREV_TAG" != "v0.0.0" ]; then
+          if [ "$PREV_TAG" != "0.0.0" ]; then
             # Features
             FEATURES=$(git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)" --no-merges --grep="^feat" || true)
             if [ ! -z "$FEATURES" ]; then
@@ -222,7 +222,7 @@ jobs:
           fi
 
           echo "" >> CHANGELOG.md
-          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...v$NEW_VERSION" >> CHANGELOG.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...$NEW_VERSION" >> CHANGELOG.md
 
           # Output for debugging
           cat CHANGELOG.md
@@ -233,9 +233,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
-          TAG="v$NEW_VERSION"
+          TAG="$NEW_VERSION"
 
-          # Create release using GitHub CLI
+          # Create release using GitHub CLI (no 'v' prefix)
           gh release create "$TAG" \
             --title "Release $TAG" \
             --notes-file CHANGELOG.md
@@ -248,7 +248,7 @@ jobs:
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
           echo "## 🚀 Release Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** v$NEW_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $NEW_VERSION" >> $GITHUB_STEP_SUMMARY
           echo "**Type:** ${{ steps.bump_type.outputs.version_type }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "The release.yml workflow will now build and push Docker images." >> $GITHUB_STEP_SUMMARY
