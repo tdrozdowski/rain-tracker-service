@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument, warn};
 
 use crate::fetch_error::FetchError;
+use crate::utils;
 
 // Note: This is the "fetcher" version of GaugeSummary (before being persisted)
 // The DB model GaugeSummary (in db/models.rs) includes id, timestamps, etc.
@@ -22,6 +23,12 @@ pub struct GaugeSummary {
 pub struct GaugeListFetcher {
     client: reqwest::Client,
     url: String,
+}
+
+/// Extract station ID (4 or 5 digits) from a string that may contain additional text
+/// Delegates to shared utils::extract_station_id()
+fn extract_station_id(value: &str) -> Result<String, FetchError> {
+    utils::extract_station_id(value).map_err(|_| FetchError::ParseError)
 }
 
 impl GaugeListFetcher {
@@ -156,7 +163,8 @@ impl GaugeListFetcher {
             return Err(FetchError::ParseError);
         }
 
-        let station_id = parts[station_id_idx].to_string();
+        // Extract station_id (5 digits only, ignore any text like "since 03/09/18")
+        let station_id = extract_station_id(parts[station_id_idx])?;
 
         // Elevation (next field after station_id)
         let elevation_ft = parts[station_id_idx + 1]
@@ -296,5 +304,80 @@ Test Gauge One          Phoenix         12345   1000   1.00   2.00   AZ001  Nort
         let gauges = result.unwrap();
         assert_eq!(gauges.len(), 1);
         assert_eq!(gauges[0].gauge_name, "Test Gauge One");
+    }
+
+    #[test]
+    fn test_extract_station_id_clean() {
+        let result = extract_station_id("29200");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "29200");
+    }
+
+    #[test]
+    fn test_extract_station_id_with_since_text() {
+        let result = extract_station_id("29200 since 03/09/18");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "29200");
+    }
+
+    #[test]
+    fn test_extract_station_id_with_other_text() {
+        let result = extract_station_id("12345 prior to 2020");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "12345");
+    }
+
+    #[test]
+    fn test_extract_station_id_invalid_length() {
+        let result = extract_station_id("123");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_station_id_non_numeric() {
+        let result = extract_station_id("ABCDE");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_station_id_mixed() {
+        // "1234A" will extract "1234" as a valid 4-digit ID
+        // This is actually correct behavior - we want the numeric part
+        let result = extract_station_id("1234A");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "1234");
+    }
+
+    #[test]
+    fn test_extract_station_id_4digit_clean() {
+        let result = extract_station_id("1800");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "1800");
+    }
+
+    #[test]
+    fn test_extract_station_id_4digit_with_since() {
+        let result = extract_station_id("1800 since 03/27/18");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "1800");
+    }
+
+    #[test]
+    fn test_extract_station_id_4digit_prior() {
+        let result = extract_station_id("9999 prior to 2015");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "9999");
+    }
+
+    #[test]
+    fn test_extract_station_id_too_short() {
+        let result = extract_station_id("123");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_station_id_too_long() {
+        let result = extract_station_id("123456");
+        assert!(result.is_err());
     }
 }

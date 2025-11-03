@@ -8,6 +8,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::utils;
+
 /// Gauge metadata extracted from FOPR Meta_Stats sheet
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetaStatsData {
@@ -218,18 +220,25 @@ impl MetaStatsData {
     }
 }
 
-/// Parse gage ID history: "59700; 4695 prior to 2/20/2018"
+/// Parse gage ID history: "59700; 4695 prior to 2/20/2018" or "40700 since 6/30/20"
+/// Extracts only numeric IDs (4-5 digits), ignoring text like "since" or "prior to"
 fn parse_gage_id_history(value: &str) -> GageIdHistory {
     let parts: Vec<&str> = value.split(';').map(|s| s.trim()).collect();
 
-    let current_id = parts[0].to_string();
+    // Extract current ID (first part before semicolon, take only the numeric portion)
+    let current_id = extract_numeric_id(parts[0]);
 
     // Extract previous IDs from subsequent parts
     let previous_ids = parts[1..]
         .iter()
         .filter_map(|part| {
             // Extract ID from "4695 prior to 2/20/2018" format
-            part.split_whitespace().next().map(|s| s.to_string())
+            let id = extract_numeric_id(part);
+            if id.is_empty() {
+                None
+            } else {
+                Some(id)
+            }
         })
         .collect();
 
@@ -237,6 +246,12 @@ fn parse_gage_id_history(value: &str) -> GageIdHistory {
         current_id,
         previous_ids,
     }
+}
+
+/// Extract 4-5 digit numeric ID from a string that may contain additional text
+/// Delegates to shared utils::extract_station_id()
+fn extract_numeric_id(value: &str) -> String {
+    utils::extract_station_id(value).unwrap_or_else(|_| value.to_string())
 }
 
 /// Convert Excel date serial to NaiveDate
@@ -398,6 +413,44 @@ mod tests {
         let result = parse_gage_id_history(input);
         assert_eq!(result.current_id, "59700");
         assert_eq!(result.previous_ids, vec!["4695", "1234"]);
+    }
+
+    #[test]
+    fn test_parse_gage_id_history_with_since() {
+        let input = "40700 since 6/30/20";
+        let result = parse_gage_id_history(input);
+        assert_eq!(result.current_id, "40700");
+        assert!(result.previous_ids.is_empty());
+    }
+
+    #[test]
+    fn test_parse_gage_id_history_with_installation() {
+        let input = "37300 since installation";
+        let result = parse_gage_id_history(input);
+        assert_eq!(result.current_id, "37300");
+        assert!(result.previous_ids.is_empty());
+    }
+
+    #[test]
+    fn test_extract_numeric_id_clean() {
+        assert_eq!(extract_numeric_id("29200"), "29200");
+        assert_eq!(extract_numeric_id("1800"), "1800");
+    }
+
+    #[test]
+    fn test_extract_numeric_id_with_since() {
+        assert_eq!(extract_numeric_id("40700 since 6/30/20"), "40700");
+        assert_eq!(extract_numeric_id("29200 since 03/09/18"), "29200");
+    }
+
+    #[test]
+    fn test_extract_numeric_id_with_installation() {
+        assert_eq!(extract_numeric_id("37300 since installation"), "37300");
+    }
+
+    #[test]
+    fn test_extract_numeric_id_4digit() {
+        assert_eq!(extract_numeric_id("1800 since 03/27/18"), "1800");
     }
 
     #[test]
