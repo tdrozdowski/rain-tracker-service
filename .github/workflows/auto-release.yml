@@ -236,11 +236,13 @@ jobs:
           TAG="$NEW_VERSION"
 
           # Create release using GitHub CLI (no 'v' prefix)
+          # This should trigger the release.yml workflow via 'release: published' event
           gh release create "$TAG" \
             --title "Release $TAG" \
             --notes-file CHANGELOG.md
 
           echo "Created GitHub Release: $TAG"
+
 
       - name: Summary
         if: steps.check_exists.outputs.skip_release == 'false'
