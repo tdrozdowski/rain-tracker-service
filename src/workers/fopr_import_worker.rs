@@ -16,6 +16,7 @@ pub struct FoprImportWorker {
     job_repo: FoprImportJobRepository,
     import_service: FoprImportService,
     poll_interval_secs: u64,
+    worker_id: usize,
 }
 
 impl FoprImportWorker {
@@ -23,11 +24,13 @@ impl FoprImportWorker {
         job_repo: FoprImportJobRepository,
         import_service: FoprImportService,
         poll_interval_secs: u64,
+        worker_id: usize,
     ) -> Self {
         Self {
             job_repo,
             import_service,
             poll_interval_secs,
+            worker_id,
         }
     }
 
@@ -38,11 +41,12 @@ impl FoprImportWorker {
     /// 1. Attempts to claim a job atomically
     /// 2. If claimed, executes the import
     /// 3. Updates job status based on result
-    #[instrument(skip(self), fields(poll_interval = %self.poll_interval_secs))]
+    #[instrument(skip(self), fields(worker_id = %self.worker_id, poll_interval = %self.poll_interval_secs))]
     pub async fn run(&self) {
         info!(
-            "Starting FOPR import worker (poll interval: {}s)",
-            self.poll_interval_secs
+            worker_id = self.worker_id,
+            poll_interval_secs = self.poll_interval_secs,
+            "FOPR import worker started"
         );
 
         let mut ticker = interval(Duration::from_secs(self.poll_interval_secs));
@@ -51,26 +55,32 @@ impl FoprImportWorker {
             ticker.tick().await;
 
             if let Err(e) = self.process_next_job().await {
-                error!("Error processing job: {}", e);
+                error!(
+                    worker_id = self.worker_id,
+                    error = %e,
+                    "Error processing job"
+                );
             }
         }
     }
 
     /// Process a single job (if available)
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(worker_id = %self.worker_id))]
     async fn process_next_job(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Atomically claim next job
         let job = match self.job_repo.claim_next_job().await? {
             Some(j) => j,
             None => {
-                // No jobs available
+                // No jobs available (this is normal, not worth logging at info level)
                 return Ok(());
             }
         };
 
         info!(
-            "Processing FOPR import job {} for station {}",
-            job.id, job.station_id
+            worker_id = self.worker_id,
+            job_id = job.id,
+            station_id = %job.station_id,
+            "Claimed FOPR import job"
         );
 
         // Execute import
@@ -80,14 +90,24 @@ impl FoprImportWorker {
         match result {
             Ok(stats) => {
                 info!(
-                    "✓ Job {} completed successfully ({} readings imported)",
-                    job.id, stats.readings_imported
+                    worker_id = self.worker_id,
+                    job_id = job.id,
+                    station_id = %job.station_id,
+                    readings_imported = stats.readings_imported,
+                    duration_secs = %format!("{:.2}", stats.duration_secs),
+                    "Job completed successfully"
                 );
                 self.job_repo.mark_completed(job.id, &stats).await?;
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                warn!("Job {} failed: {}", job.id, error_msg);
+                warn!(
+                    worker_id = self.worker_id,
+                    job_id = job.id,
+                    station_id = %job.station_id,
+                    error = %error_msg,
+                    "Job failed"
+                );
 
                 let new_retry_count = job.retry_count + 1;
 
@@ -129,13 +149,22 @@ impl FoprImportWorker {
 
                 if new_retry_count >= job.max_retries {
                     error!(
-                        "Job {} exceeded max retries ({}), giving up",
-                        job.id, job.max_retries
+                        worker_id = self.worker_id,
+                        job_id = job.id,
+                        station_id = %job.station_id,
+                        retry_count = new_retry_count,
+                        max_retries = job.max_retries,
+                        "Job exceeded max retries, giving up"
                     );
                 } else {
                     info!(
-                        "Job {} will be retried (attempt {}/{}) at {}",
-                        job.id, new_retry_count, job.max_retries, next_retry_at
+                        worker_id = self.worker_id,
+                        job_id = job.id,
+                        station_id = %job.station_id,
+                        retry_count = new_retry_count,
+                        max_retries = job.max_retries,
+                        next_retry_at = %next_retry_at,
+                        "Job will be retried"
                     );
                 }
             }
