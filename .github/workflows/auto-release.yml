@@ -1,0 +1,262 @@
+name: Auto Release
+
+on:
+  # Trigger on PR merge to master
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - 'docs/**'
+      - 'plans/**'
+  # Allow manual trigger with version type selection
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        default: 'patch'
+        options:
+          - major
+          - minor
+          - patch
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for changelog
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get latest version
+        id: get_version
+        run: |
+          # Get the latest tag, default to v0.0.0 if none exists
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST_TAG"
+
+          # Strip 'v' prefix for version comparison
+          LATEST_VERSION=${LATEST_TAG#v}
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Determine version bump type
+        id: bump_type
+        run: |
+          # Manual trigger: use the input
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION_TYPE="${{ github.event.inputs.version_type }}"
+            echo "Manual trigger: using $VERSION_TYPE"
+          else
+            # Auto trigger: analyze commit messages
+            # Get the last commit message
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+
+            # Check for conventional commit patterns
+            if echo "$COMMIT_MSG" | grep -qiE "^(feat!:|BREAKING CHANGE:|breaking change:)"; then
+              VERSION_TYPE="major"
+              echo "Detected breaking change in commit message"
+            elif echo "$COMMIT_MSG" | grep -qiE "^feat(\(.*\))?:"; then
+              VERSION_TYPE="minor"
+              echo "Detected feature in commit message"
+            else
+              VERSION_TYPE="patch"
+              echo "Default to patch (fix/chore/docs)"
+            fi
+          fi
+
+          echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+          echo "Version bump type: $VERSION_TYPE"
+
+      - name: Calculate new version
+        id: new_version
+        run: |
+          CURRENT="${{ steps.get_version.outputs.latest_version }}"
+          TYPE="${{ steps.bump_type.outputs.version_type }}"
+
+          # Parse semver (major.minor.patch)
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          # Remove any pre-release or build metadata
+          PATCH=${PATCH%%-*}
+          PATCH=${PATCH%%+*}
+
+          # Increment version based on type
+          case $TYPE in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Check if version already exists
+        id: check_exists
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          CURRENT_VERSION="${{ steps.get_version.outputs.latest_version }}"
+
+          if [ "$NEW_VERSION" == "$CURRENT_VERSION" ]; then
+            echo "Version $NEW_VERSION already exists, skipping release"
+            echo "skip_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update Cargo.toml version
+        if: steps.check_exists.outputs.skip_release == 'false'
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+
+          # Update version in Cargo.toml (first occurrence only - the package version)
+          sed -i "0,/^version = \".*\"/s//version = \"$NEW_VERSION\"/" Cargo.toml
+
+          # Verify the change
+          grep "^version = \"$NEW_VERSION\"" Cargo.toml || {
+            echo "Failed to update Cargo.toml version"
+            exit 1
+          }
+
+          echo "Updated Cargo.toml to version $NEW_VERSION"
+
+      - name: Setup Rust toolchain
+        if: steps.check_exists.outputs.skip_release == 'false'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Update Cargo.lock
+        if: steps.check_exists.outputs.skip_release == 'false'
+        run: |
+          # Update Cargo.lock with new version
+          cargo update --workspace --offline 2>/dev/null || cargo update --workspace || true
+          echo "Updated Cargo.lock"
+
+      - name: Commit version bump
+        if: steps.check_exists.outputs.skip_release == 'false'
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]" || {
+            echo "No changes to commit (version already up to date)"
+          }
+
+      - name: Create and push tag
+        if: steps.check_exists.outputs.skip_release == 'false'
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          TAG="v$NEW_VERSION"
+
+          # Create annotated tag
+          git tag -a "$TAG" -m "Release $TAG"
+
+          # Push commit and tag
+          git push origin master --follow-tags
+
+          echo "Created and pushed tag: $TAG"
+
+      - name: Generate changelog
+        if: steps.check_exists.outputs.skip_release == 'false'
+        id: changelog
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          PREV_TAG="${{ steps.get_version.outputs.latest_tag }}"
+
+          # Generate changelog from commits since last tag
+          echo "## What's Changed" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+
+          # Get commits since last tag, categorized
+          if [ "$PREV_TAG" != "v0.0.0" ]; then
+            # Features
+            FEATURES=$(git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)" --no-merges --grep="^feat" || true)
+            if [ ! -z "$FEATURES" ]; then
+              echo "### Features" >> CHANGELOG.md
+              echo "$FEATURES" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+
+            # Fixes
+            FIXES=$(git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)" --no-merges --grep="^fix" || true)
+            if [ ! -z "$FIXES" ]; then
+              echo "### Bug Fixes" >> CHANGELOG.md
+              echo "$FIXES" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+
+            # Other changes
+            OTHERS=$(git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)" --no-merges --grep="^chore\|^docs\|^refactor\|^style\|^test" || true)
+            if [ ! -z "$OTHERS" ]; then
+              echo "### Other Changes" >> CHANGELOG.md
+              echo "$OTHERS" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+          else
+            git log --pretty=format:"- %s (%h)" --no-merges >> CHANGELOG.md || true
+            echo "" >> CHANGELOG.md
+          fi
+
+          echo "" >> CHANGELOG.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...v$NEW_VERSION" >> CHANGELOG.md
+
+          # Output for debugging
+          cat CHANGELOG.md
+
+      - name: Create GitHub Release
+        if: steps.check_exists.outputs.skip_release == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          TAG="v$NEW_VERSION"
+
+          # Create release using GitHub CLI
+          gh release create "$TAG" \
+            --title "Release $TAG" \
+            --notes-file CHANGELOG.md
+
+          echo "Created GitHub Release: $TAG"
+
+      - name: Summary
+        if: steps.check_exists.outputs.skip_release == 'false'
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          echo "## 🚀 Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** v$NEW_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** ${{ steps.bump_type.outputs.version_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The release.yml workflow will now build and push Docker images." >> $GITHUB_STEP_SUMMARY
+
+      - name: Summary (Skipped)
+        if: steps.check_exists.outputs.skip_release == 'true'
+        run: |
+          echo "## ⏭️ Release Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version ${{ steps.new_version.outputs.new_version }} already exists." >> $GITHUB_STEP_SUMMARY
+          echo "No release created." >> $GITHUB_STEP_SUMMARY
