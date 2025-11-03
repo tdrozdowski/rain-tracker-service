@@ -3,7 +3,7 @@ use crate::db::{DbError, GaugeRepository, GaugeSummary};
 use crate::gauge_list_fetcher::GaugeSummary as FetchedGauge;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument};
 use utoipa::{IntoParams, ToSchema};
 
 // Pagination types (used by API)
@@ -110,31 +110,46 @@ impl GaugeService {
         gauge_summary: &FetchedGauge,
     ) -> Result<bool, DbError> {
         let station_id = &gauge_summary.station_id;
-        debug!("Handling gauge discovery for station {}", station_id);
+        debug!(
+            station_id = %station_id,
+            gauge_name = %gauge_summary.gauge_name,
+            "Handling gauge discovery"
+        );
 
         // Check if gauge exists in gauges table (has metadata)
         let gauge_exists = self.gauge_repo.gauge_exists(station_id).await?;
 
         if gauge_exists {
-            debug!("Gauge {} already exists, no action needed", station_id);
+            debug!(
+                station_id = %station_id,
+                "Gauge already has metadata, no action needed"
+            );
             return Ok(false);
         }
 
         info!(
-            "New gauge discovered: {} - checking for existing job",
-            station_id
+            station_id = %station_id,
+            gauge_name = %gauge_summary.gauge_name,
+            "New gauge discovered, checking for existing import job"
         );
 
         // Check if import job already exists
         let job_exists = self.job_repo.job_exists(station_id).await?;
 
         if job_exists {
-            debug!("Import job already exists for station {}", station_id);
+            debug!(
+                station_id = %station_id,
+                "Import job already exists"
+            );
             return Ok(false);
         }
 
         // Create FOPR import job with gauge summary
-        info!("Creating FOPR import job for new gauge {}", station_id);
+        info!(
+            station_id = %station_id,
+            gauge_name = %gauge_summary.gauge_name,
+            "Creating FOPR import job for new gauge"
+        );
         let job_id = self
             .job_repo
             .create_job(
@@ -143,11 +158,20 @@ impl GaugeService {
                 10, // Default priority
                 Some(gauge_summary),
             )
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(
+                    station_id = %station_id,
+                    error = %e,
+                    "Failed to create FOPR import job"
+                );
+                e
+            })?;
 
         info!(
-            "Created FOPR import job {} for new gauge {}",
-            job_id, station_id
+            station_id = %station_id,
+            job_id = job_id,
+            "Created FOPR import job for new gauge"
         );
         Ok(true)
     }
@@ -158,7 +182,17 @@ impl GaugeService {
     /// Note: This is separate from the gauges table which contains full metadata.
     #[instrument(skip(self, summaries), fields(count = summaries.len()))]
     pub async fn upsert_summaries(&self, summaries: &[FetchedGauge]) -> Result<usize, DbError> {
-        debug!("Upserting {} gauge summaries", summaries.len());
-        self.gauge_repo.upsert_summaries(summaries).await
+        debug!(gauge_count = summaries.len(), "Upserting gauge summaries");
+        self.gauge_repo
+            .upsert_summaries(summaries)
+            .await
+            .map_err(|e| {
+                error!(
+                    gauge_count = summaries.len(),
+                    error = %e,
+                    "Failed to upsert gauge summaries"
+                );
+                e
+            })
     }
 }

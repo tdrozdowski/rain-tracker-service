@@ -1,5 +1,5 @@
 use sqlx::{PgPool, Postgres, Transaction};
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument};
 
 use crate::db::{DbError, GaugeSummary};
 use crate::fopr::MetaStatsData;
@@ -55,7 +55,16 @@ impl GaugeRepository {
                 summary.rainfall_past_24h_inches
             )
             .execute(&mut *tx)
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(
+                    station_id = %summary.station_id,
+                    gauge_name = %summary.gauge_name,
+                    error = %e,
+                    "Failed to upsert gauge summary"
+                );
+                e
+            })?;
 
             upserted += result.rows_affected() as usize;
         }
