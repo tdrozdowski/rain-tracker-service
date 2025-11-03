@@ -243,6 +243,27 @@ jobs:
 
           echo "Created GitHub Release: $TAG"
 
+      - name: Trigger Docker Release Build
+        if: steps.check_exists.outputs.skip_release == 'false'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const version = '${{ steps.new_version.outputs.new_version }}';
+
+            console.log(`Triggering release workflow for version ${version}`);
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release.yml',
+              ref: version,
+              inputs: {
+                tag: version
+              }
+            });
+
+            console.log('Release workflow triggered successfully');
 
       - name: Summary
         if: steps.check_exists.outputs.skip_release == 'false'
@@ -253,7 +274,9 @@ jobs:
           echo "**Version:** $NEW_VERSION" >> $GITHUB_STEP_SUMMARY
           echo "**Type:** ${{ steps.bump_type.outputs.version_type }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The release.yml workflow will now build and push Docker images." >> $GITHUB_STEP_SUMMARY
+          echo "✅ Docker release build triggered" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the [Release workflow](https://github.com/${{ github.repository }}/actions/workflows/release.yml) for Docker build status." >> $GITHUB_STEP_SUMMARY
 
       - name: Summary (Skipped)
         if: steps.check_exists.outputs.skip_release == 'true'
