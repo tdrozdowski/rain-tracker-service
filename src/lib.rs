@@ -9,4 +9,5 @@ pub mod gauge_list_fetcher;
 pub mod importers;
 pub mod scheduler;
 pub mod services;
+pub mod utils;
 pub mod workers;
