@@ -19,6 +19,7 @@ pub enum DownloadError {
 }
 
 /// MCFCD data downloader for historical rainfall files
+#[derive(Clone)]
 pub struct McfcdDownloader {
     client: Client,
     base_url: String,

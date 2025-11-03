@@ -9,6 +9,7 @@ pub struct Config {
     pub fetch_interval_minutes: u64,
     pub gauge_list_url: String,
     pub gauge_list_interval_minutes: u64,
+    pub fopr_worker_concurrency: usize,
 }
 
 impl Config {
@@ -30,6 +31,10 @@ impl Config {
                 .unwrap_or_else(|_| "60".to_string())
                 .parse()
                 .unwrap_or(60),
+            fopr_worker_concurrency: env::var("FOPR_WORKER_CONCURRENCY")
+                .unwrap_or_else(|_| "10".to_string())
+                .parse()
+                .unwrap_or(10),
         })
     }
 
