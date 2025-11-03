@@ -35,6 +35,7 @@ pub enum FoprImportError {
 }
 
 /// Service for importing FOPR (Full Operational Period of Record) data
+#[derive(Clone)]
 pub struct FoprImportService {
     downloader: McfcdDownloader,
     gauge_repo: GaugeRepository,

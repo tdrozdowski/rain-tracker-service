@@ -22,7 +22,7 @@ pub struct Application {
     pub server_handle: JoinHandle<Result<(), std::io::Error>>,
     pub reading_scheduler_handle: JoinHandle<()>,
     pub gauge_list_scheduler_handle: JoinHandle<()>,
-    pub fopr_worker_handle: JoinHandle<()>,
+    pub fopr_worker_handles: Vec<JoinHandle<()>>,
 }
 
 impl Application {
@@ -32,7 +32,7 @@ impl Application {
     /// - HTTP API server (Axum)
     /// - Reading scheduler (15 min interval)
     /// - Gauge list scheduler (60 min interval)
-    /// - FOPR import worker (30 sec poll interval)
+    /// - FOPR import workers (configurable concurrency, default 10)
     pub async fn build(config: Config, pool: PgPool) -> Result<Self, Box<dyn std::error::Error>> {
         info!("Initializing application components");
 
@@ -52,15 +52,12 @@ impl Application {
         let reading_fetcher = RainGaugeFetcher::new(config.gauge_url.clone());
         let gauge_list_fetcher = GaugeListFetcher::new(config.gauge_list_url.clone());
 
-        // Create FOPR import worker
-        let fopr_worker = FoprImportWorker::new(
-            job_repo.clone(),
-            fopr_import_service,
-            30, // Poll every 30 seconds
-        );
-
         // Spawn background tasks
         info!("Spawning background schedulers and workers");
+        info!(
+            "FOPR worker concurrency: {} workers",
+            config.fopr_worker_concurrency
+        );
 
         // Scheduler 1: Individual gauge readings (15 min interval)
         let reading_scheduler_handle = {
@@ -96,10 +93,22 @@ impl Application {
             })
         };
 
-        // Worker 3: FOPR import worker (30 sec poll)
-        let fopr_worker_handle = tokio::spawn(async move {
-            fopr_worker.run().await;
-        });
+        // Workers: FOPR import workers (spawn multiple for concurrent processing)
+        let mut fopr_worker_handles = Vec::new();
+        for worker_id in 0..config.fopr_worker_concurrency {
+            let worker = FoprImportWorker::new(
+                job_repo.clone(),
+                fopr_import_service.clone(),
+                30, // Poll every 30 seconds
+            );
+
+            let handle = tokio::spawn(async move {
+                info!("Starting FOPR import worker #{}", worker_id);
+                worker.run().await;
+            });
+
+            fopr_worker_handles.push(handle);
+        }
 
         // Create API router
         let app_state = AppState {
@@ -123,7 +132,7 @@ impl Application {
             server_handle,
             reading_scheduler_handle,
             gauge_list_scheduler_handle,
-            fopr_worker_handle,
+            fopr_worker_handles,
         })
     }
 

@@ -10,4 +10,5 @@ data:
   GAUGE_LIST_URL: "https://alert.fcd.maricopa.gov/alert/Rain/ev_rain.txt"
   FETCH_INTERVAL_MINUTES: "15"
   GAUGE_LIST_INTERVAL_MINUTES: "60"
+  FOPR_WORKER_CONCURRENCY: "10"
   RUST_LOG: "debug"
