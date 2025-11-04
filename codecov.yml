@@ -16,12 +16,10 @@ coverage:
 
     patch:
       default:
-        target: 60%  # Reasonable target for patches (up from auto)
+        target: 80%  # High bar for patch coverage
         threshold: 1%
         base: auto
         if_ci_failed: error
-        # Logging statements don't affect program logic but inflate coverage requirements
-        # Focus on testing actual functionality rather than side effects
 
 comment:
   layout: "reach,diff,flags,tree"
