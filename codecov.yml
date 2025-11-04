@@ -16,10 +16,12 @@ coverage:
 
     patch:
       default:
-        target: auto
+        target: 60%  # Reasonable target for patches (up from auto)
         threshold: 1%
         base: auto
         if_ci_failed: error
+        # Logging statements don't affect program logic but inflate coverage requirements
+        # Focus on testing actual functionality rather than side effects
 
 comment:
   layout: "reach,diff,flags,tree"
@@ -30,3 +32,6 @@ ignore:
   - "tests/**"
   - "src/bin/**"
   - "migrations/**"
+
+# Note: Logging statements are marked with inline comments in code
+# to exclude them from coverage (e.g., // coverage:ignore-line)

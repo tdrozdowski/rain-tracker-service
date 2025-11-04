@@ -254,3 +254,70 @@ async fn test_gauge_service_with_existing_gauge() {
     // Cleanup
     error_test_fixtures::cleanup_test_gauge(&pool, station_id).await;
 }
+#[tokio::test]
+#[serial]
+async fn test_fopr_import_service_error_on_invalid_file() {
+    // Test error handling when FOPR file parsing fails
+    // This exercises error logging in fopr_import_service parse paths
+    let pool = error_test_fixtures::setup_test_db().await;
+    let service = FoprImportService::new(pool.clone());
+
+    // Try to import for a station that will trigger download error
+    let result = service.import_fopr("INVALID_STATION_999999").await;
+
+    // Should return an error (download will fail)
+    assert!(
+        result.is_err(),
+        "Should fail when importing non-existent station"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn test_gauge_service_discovery_duplicate_prevention() {
+    // Test that duplicate gauge discovery is properly prevented and logged
+    use rain_tracker_service::gauge_list_fetcher::GaugeSummary;
+
+    let pool = error_test_fixtures::setup_test_db().await;
+    let station_id = "ERROR_TEST_DUP";
+    error_test_fixtures::cleanup_test_gauge(&pool, station_id).await;
+
+    let gauge_repo = GaugeRepository::new(pool.clone());
+    let job_repo = FoprImportJobRepository::new(pool.clone());
+    let gauge_service = GaugeService::new(gauge_repo, job_repo);
+
+    let summary = GaugeSummary {
+        station_id: station_id.to_string(),
+        gauge_name: "Duplicate Test Gauge".to_string(),
+        city_town: Some("Test City".to_string()),
+        elevation_ft: Some(1500),
+        general_location: Some("Test Location".to_string()),
+        msp_forecast_zone: Some("Test Zone".to_string()),
+        rainfall_past_6h_inches: Some(0.1),
+        rainfall_past_24h_inches: Some(0.3),
+    };
+
+    // First discovery creates job
+    let result1 = gauge_service.handle_new_gauge_discovery(&summary).await;
+    assert!(result1.is_ok());
+    assert!(result1.unwrap(), "First discovery should create job");
+
+    // Second discovery should not create duplicate
+    let result2 = gauge_service.handle_new_gauge_discovery(&summary).await;
+    assert!(result2.is_ok());
+    assert!(
+        !result2.unwrap(),
+        "Second discovery should not create duplicate job"
+    );
+
+    // Third discovery should also not create duplicate
+    let result3 = gauge_service.handle_new_gauge_discovery(&summary).await;
+    assert!(result3.is_ok());
+    assert!(
+        !result3.unwrap(),
+        "Third discovery should also not create duplicate job"
+    );
+
+    // Cleanup
+    error_test_fixtures::cleanup_test_gauge(&pool, station_id).await;
+}
