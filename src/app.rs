@@ -100,10 +100,10 @@ impl Application {
                 job_repo.clone(),
                 fopr_import_service.clone(),
                 30, // Poll every 30 seconds
+                worker_id,
             );
 
             let handle = tokio::spawn(async move {
-                info!("Starting FOPR import worker #{}", worker_id);
                 worker.run().await;
             });
 

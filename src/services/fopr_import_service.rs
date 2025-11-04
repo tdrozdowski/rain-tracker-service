@@ -67,20 +67,33 @@ impl FoprImportService {
     #[instrument(skip(self), fields(station_id = %station_id))]
     pub async fn import_fopr(&self, station_id: &str) -> Result<ImportStats, FoprImportError> {
         let start_time = Instant::now();
-        info!("Starting FOPR import for station {}", station_id);
+        info!(
+            station_id = %station_id,
+            "Starting FOPR import"
+        );
 
         // 1. Download FOPR file
-        info!("Downloading FOPR file for station {}", station_id);
+        debug!(
+            station_id = %station_id,
+            "Downloading FOPR file"
+        );
         let fopr_bytes = self
             .downloader
             .download_fopr(station_id)
             .await
-            .map_err(|e| FoprImportError::Download(e.to_string()))?;
+            .map_err(|e| {
+                error!(
+                    station_id = %station_id,
+                    error = %e,
+                    "Failed to download FOPR file"
+                );
+                FoprImportError::Download(e.to_string())
+            })?;
 
         info!(
-            "Downloaded FOPR file ({} bytes) for station {}",
-            fopr_bytes.len(),
-            station_id
+            station_id = %station_id,
+            bytes = fopr_bytes.len(),
+            "Downloaded FOPR file"
         );
 
         // 2. Write to temp file (calamine requires file path)
@@ -89,26 +102,47 @@ impl FoprImportService {
         let temp_path = temp_file.path().to_string_lossy().to_string();
 
         // 3. Parse and upsert gauge metadata
-        info!("Parsing gauge metadata from Meta_Stats sheet");
+        debug!(
+            station_id = %station_id,
+            "Parsing gauge metadata from Meta_Stats sheet"
+        );
         let metadata = {
             use calamine::{open_workbook, Reader, Xlsx};
             use std::fs::File;
             use std::io::BufReader;
 
-            let mut workbook: Xlsx<BufReader<File>> = open_workbook(&temp_path)
-                .map_err(|e| FoprImportError::Parse(format!("Failed to open workbook: {e}")))?;
+            let mut workbook: Xlsx<BufReader<File>> = open_workbook(&temp_path).map_err(|e| {
+                error!(
+                    station_id = %station_id,
+                    error = %e,
+                    "Failed to open workbook"
+                );
+                FoprImportError::Parse(format!("Failed to open workbook: {e}"))
+            })?;
 
             let range = workbook.worksheet_range("Meta_Stats").map_err(|e| {
+                error!(
+                    station_id = %station_id,
+                    error = ?e,
+                    "Failed to read Meta_Stats sheet"
+                );
                 FoprImportError::Parse(format!("Failed to read Meta_Stats sheet: {e:?}"))
             })?;
 
-            MetaStatsData::from_worksheet_range(&range)
-                .map_err(|e| FoprImportError::Parse(format!("Metadata parse error: {e}")))?
+            MetaStatsData::from_worksheet_range(&range).map_err(|e| {
+                error!(
+                    station_id = %station_id,
+                    error = %e,
+                    "Metadata parse error"
+                );
+                FoprImportError::Parse(format!("Metadata parse error: {e}"))
+            })?
         };
 
         info!(
-            "Parsed metadata for station {} ({})",
-            metadata.station_id, metadata.station_name
+            station_id = %metadata.station_id,
+            station_name = %metadata.station_name,
+            "Parsed gauge metadata"
         );
 
         self.gauge_repo
@@ -116,27 +150,46 @@ impl FoprImportService {
             .await
             .map_err(|e| {
                 let DbError::SqlxError(sqlx_err) = e;
+                error!(
+                    station_id = %station_id,
+                    error = %sqlx_err,
+                    "Failed to upsert gauge metadata"
+                );
                 FoprImportError::Database(sqlx_err)
             })?;
 
-        info!("Upserted gauge metadata for station {}", station_id);
+        debug!(
+            station_id = %station_id,
+            "Upserted gauge metadata"
+        );
 
         // 4. Parse all year sheets
-        info!("Parsing daily rainfall data from year sheets");
+        debug!(
+            station_id = %station_id,
+            "Parsing daily rainfall data from year sheets"
+        );
         let data_parser = FoprDailyDataParser::new(&temp_path, station_id);
-        let readings = data_parser
-            .parse_all_years()
-            .map_err(|e| FoprImportError::Parse(format!("Daily data parse error: {e}")))?;
+        let readings = data_parser.parse_all_years().map_err(|e| {
+            error!(
+                station_id = %station_id,
+                error = %e,
+                "Failed to parse daily data"
+            );
+            FoprImportError::Parse(format!("Daily data parse error: {e}"))
+        })?;
 
         if readings.is_empty() {
-            warn!("No readings found in FOPR file for station {}", station_id);
+            warn!(
+                station_id = %station_id,
+                "No readings found in FOPR file"
+            );
             return Err(FoprImportError::NoReadings);
         }
 
         info!(
-            "Parsed {} readings for station {}",
-            readings.len(),
-            station_id
+            station_id = %station_id,
+            reading_count = readings.len(),
+            "Parsed daily rainfall readings"
         );
 
         // 5. Insert readings with deduplication
@@ -144,16 +197,18 @@ impl FoprImportService {
             self.insert_readings_bulk(station_id, readings).await?;
 
         info!(
-            "Inserted {} readings, {} duplicates for station {}",
-            inserted, duplicates, station_id
+            station_id = %station_id,
+            inserted = inserted,
+            duplicates = duplicates,
+            "Inserted readings into database"
         );
 
         // 6. Recalculate monthly summaries
         if !months_to_recalc.is_empty() {
-            info!(
-                "Recalculating {} monthly summaries for station {}",
-                months_to_recalc.len(),
-                station_id
+            debug!(
+                station_id = %station_id,
+                month_count = months_to_recalc.len(),
+                "Recalculating monthly summaries"
             );
             self.recalculate_monthly_summaries(&months_to_recalc)
                 .await?;
@@ -161,10 +216,10 @@ impl FoprImportService {
 
         let duration = start_time.elapsed();
         info!(
-            "✓ FOPR import complete for station {} ({:.1}s, {} readings)",
-            station_id,
-            duration.as_secs_f64(),
-            inserted
+            station_id = %station_id,
+            duration_secs = %format!("{:.2}", duration.as_secs_f64()),
+            readings_imported = inserted,
+            "FOPR import completed successfully"
         );
 
         // Build statistics
@@ -182,7 +237,7 @@ impl FoprImportService {
     ///
     /// Business logic: Creates data_source identifier and coordinates with repository.
     /// Returns: (inserted_count, duplicate_count, months_to_recalculate)
-    #[instrument(skip(self, readings), fields(station_id = %station_id, count = readings.len()))]
+    #[instrument(skip(self, readings), fields(station_id = %station_id, reading_count = readings.len()))]
     #[allow(clippy::type_complexity)]
     async fn insert_readings_bulk(
         &self,
@@ -190,9 +245,9 @@ impl FoprImportService {
         readings: Vec<HistoricalReading>,
     ) -> Result<(usize, usize, HashSet<(String, i32, u32)>), FoprImportError> {
         debug!(
-            "Inserting {} readings for station {}",
-            readings.len(),
-            station_id
+            station_id = %station_id,
+            reading_count = readings.len(),
+            "Inserting readings into database"
         );
 
         // Business logic: Create data_source identifier for FOPR imports
@@ -205,6 +260,11 @@ impl FoprImportService {
             .await
             .map_err(|e| {
                 let DbError::SqlxError(sqlx_err) = e;
+                error!(
+                    station_id = %station_id,
+                    error = %sqlx_err,
+                    "Failed to insert readings"
+                );
                 FoprImportError::Database(sqlx_err)
             })?;
 
@@ -216,20 +276,26 @@ impl FoprImportService {
             .collect();
 
         debug!(
-            "Insert complete: {} inserted, {} duplicates",
-            inserted, duplicates
+            station_id = %station_id,
+            inserted = inserted,
+            duplicates = duplicates,
+            affected_months = months_to_recalculate.len(),
+            "Bulk insert complete"
         );
 
         Ok((inserted, duplicates, months_to_recalculate))
     }
 
     /// Recalculate monthly summaries for affected station-months
-    #[instrument(skip(self, months), fields(count = months.len()))]
+    #[instrument(skip(self, months), fields(month_count = months.len()))]
     async fn recalculate_monthly_summaries(
         &self,
         months: &HashSet<(String, i32, u32)>,
     ) -> Result<(), FoprImportError> {
-        debug!("Recalculating {} monthly summaries", months.len());
+        debug!(
+            month_count = months.len(),
+            "Recalculating monthly summaries"
+        );
 
         for (station_id, year, month) in months {
             // Business logic: Calculate month boundaries (first day of month to first day of next month)
@@ -240,6 +306,13 @@ impl FoprImportService {
                 .await
                 .map_err(|e| {
                     let DbError::SqlxError(sqlx_err) = e;
+                    error!(
+                        station_id = %station_id,
+                        year = year,
+                        month = month,
+                        error = %sqlx_err,
+                        "Failed to recalculate monthly summary"
+                    );
                     FoprImportError::Database(sqlx_err)
                 })?;
         }

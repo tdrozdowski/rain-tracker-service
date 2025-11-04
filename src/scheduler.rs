@@ -115,10 +115,16 @@ pub async fn start_gauge_list_scheduler(
 
         match fetch_and_store_gauge_list(&fetcher, &gauge_service).await {
             Ok(count) => {
-                info!("Successfully fetched and stored {} gauge summaries", count);
+                info!(
+                    gauge_count = count,
+                    "Successfully fetched and stored gauge summaries"
+                );
             }
             Err(e) => {
-                error!("Failed to fetch gauge list: {}", e);
+                error!(
+                    error = %e,
+                    "Failed to fetch and store gauge list"
+                );
             }
         }
     }
@@ -129,16 +135,20 @@ async fn fetch_and_store_gauge_list(
     fetcher: &GaugeListFetcher,
     gauge_service: &GaugeService,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    debug!("Fetching gauge list");
+    debug!("Fetching gauge list from remote source");
     let gauges = fetcher.fetch_gauge_list().await?;
-    info!("Fetched {} gauges from list", gauges.len());
+    info!(gauge_count = gauges.len(), "Fetched gauges from list");
 
     // Handle new gauge discovery
     let mut new_jobs_created = 0;
     for gauge in &gauges {
         match gauge_service.handle_new_gauge_discovery(gauge).await {
             Ok(true) => {
-                info!("Created FOPR import job for new gauge {}", gauge.station_id);
+                info!(
+                    station_id = %gauge.station_id,
+                    gauge_name = %gauge.gauge_name,
+                    "Created FOPR import job for new gauge"
+                );
                 new_jobs_created += 1;
             }
             Ok(false) => {
@@ -146,8 +156,10 @@ async fn fetch_and_store_gauge_list(
             }
             Err(e) => {
                 error!(
-                    "Failed to handle discovery for gauge {}: {}",
-                    gauge.station_id, e
+                    station_id = %gauge.station_id,
+                    gauge_name = %gauge.gauge_name,
+                    error = %e,
+                    "Failed to handle gauge discovery"
                 );
             }
         }
@@ -155,13 +167,16 @@ async fn fetch_and_store_gauge_list(
 
     if new_jobs_created > 0 {
         info!(
-            "Created {} FOPR import jobs for new gauges",
-            new_jobs_created
+            new_jobs = new_jobs_created,
+            "Created FOPR import jobs for new gauges"
         );
     }
 
     // Upsert gauge summaries
-    debug!("Upserting gauge summaries into database");
+    debug!(
+        gauge_count = gauges.len(),
+        "Upserting gauge summaries into database"
+    );
     let upserted = gauge_service.upsert_summaries(&gauges).await?;
     Ok(upserted)
 }
