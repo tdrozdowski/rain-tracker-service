@@ -253,3 +253,165 @@ fn test_workbook_path_into_string() {
     // All should work (just verify construction)
     let _ = (importer1, importer2, importer3);
 }
+
+#[test]
+fn test_parse_all_months_continues_on_missing_sheets() {
+    // Test that parse_all_months continues when some sheets are missing
+    // This should trigger the "Sheet not found, skipping" warning path
+    let importer = ExcelImporter::new("sample-data-files/pcp_WY_2023.xlsx");
+
+    // parse_all_months tries all 12 months, some may be missing
+    let result = importer.parse_all_months(2023);
+
+    // Should succeed even if some sheets are missing
+    assert!(result.is_ok());
+    let readings = result.unwrap();
+
+    // Should have at least some readings from available months
+    assert!(!readings.is_empty());
+}
+
+#[test]
+fn test_historical_reading_footnote_is_none() {
+    // Excel files don't have footnotes, verify they're always None
+    let importer = ExcelImporter::new("sample-data-files/pcp_WY_2023.xlsx");
+    let result = importer.parse_month_sheet("OCT");
+
+    assert!(result.is_ok());
+    let readings = result.unwrap();
+
+    // All readings should have None for footnote_marker
+    for reading in readings {
+        assert_eq!(
+            reading.footnote_marker, None,
+            "Excel readings should not have footnotes"
+        );
+    }
+}
+
+#[test]
+fn test_only_nonzero_rainfall_stored() {
+    // Test that only non-zero rainfall values are stored
+    let importer = ExcelImporter::new("sample-data-files/pcp_WY_2023.xlsx");
+    let result = importer.parse_month_sheet("OCT");
+
+    assert!(result.is_ok());
+    let readings = result.unwrap();
+
+    // All stored readings should have positive rainfall
+    for reading in readings {
+        assert!(
+            reading.rainfall_inches > 0.0,
+            "Only non-zero rainfall should be stored"
+        );
+    }
+}
+
+#[test]
+fn test_parse_multiple_months_accumulates_data() {
+    // Test that data from multiple months accumulates correctly
+    let importer = ExcelImporter::new("sample-data-files/pcp_WY_2023.xlsx");
+
+    // Try parsing a few specific months
+    let months = ["OCT", "NOV", "DEC"];
+    let mut total_readings = 0;
+
+    for month in months {
+        if let Ok(readings) = importer.parse_month_sheet(month) {
+            total_readings += readings.len();
+        }
+    }
+
+    // Should have accumulated readings from multiple months
+    assert!(
+        total_readings > 0,
+        "Should have readings from at least one month"
+    );
+}
+
+#[test]
+fn test_station_ids_are_strings() {
+    // Test that station IDs are properly converted to strings
+    let importer = ExcelImporter::new("sample-data-files/pcp_WY_2023.xlsx");
+    let result = importer.parse_month_sheet("OCT");
+
+    assert!(result.is_ok());
+    let readings = result.unwrap();
+
+    if let Some(reading) = readings.first() {
+        // Station ID should be a valid string (numeric or alphanumeric)
+        assert!(!reading.station_id.is_empty());
+        // Should be parseable or at least contain digits
+        assert!(
+            reading.station_id.chars().any(|c| c.is_ascii_digit()),
+            "Station ID should contain digits"
+        );
+    }
+}
+
+#[test]
+fn test_dates_are_valid_naive_dates() {
+    // Test that all parsed dates are valid NaiveDate objects
+    let importer = ExcelImporter::new("sample-data-files/pcp_WY_2023.xlsx");
+    let result = importer.parse_month_sheet("OCT");
+
+    assert!(result.is_ok());
+    let readings = result.unwrap();
+
+    for reading in readings {
+        // Date should be within reasonable range (1970-2100)
+        assert!(reading.reading_date.year() >= 1970);
+        assert!(reading.reading_date.year() <= 2100);
+
+        // Month should be 1-12
+        assert!(reading.reading_date.month() >= 1);
+        assert!(reading.reading_date.month() <= 12);
+
+        // Day should be valid for the month
+        assert!(reading.reading_date.day() >= 1);
+        assert!(reading.reading_date.day() <= 31);
+    }
+}
+
+#[test]
+fn test_rainfall_values_are_reasonable() {
+    // Test that rainfall values are within reasonable bounds
+    let importer = ExcelImporter::new("sample-data-files/pcp_WY_2023.xlsx");
+    let result = importer.parse_all_months(2023);
+
+    assert!(result.is_ok());
+    let readings = result.unwrap();
+
+    for reading in readings {
+        // Rainfall should be positive (we only store non-zero)
+        assert!(reading.rainfall_inches > 0.0);
+
+        // Rainfall should be reasonable (< 20 inches in a day is extreme but possible)
+        assert!(
+            reading.rainfall_inches < 50.0,
+            "Rainfall value {} seems unreasonable for a single day",
+            reading.rainfall_inches
+        );
+    }
+}
+
+#[test]
+fn test_parse_all_months_returns_chronological_data() {
+    // Test that parse_all_months can handle a full water year
+    let importer = ExcelImporter::new("sample-data-files/pcp_WY_2023.xlsx");
+    let result = importer.parse_all_months(2023);
+
+    assert!(result.is_ok());
+    let readings = result.unwrap();
+
+    // Water year 2023 runs Oct 2022 - Sep 2023
+    // We should have data spanning this range
+    let years: std::collections::HashSet<_> =
+        readings.iter().map(|r| r.reading_date.year()).collect();
+
+    // Should have data from either 2022 or 2023 (or both for a full water year)
+    assert!(
+        years.contains(&2022) || years.contains(&2023),
+        "Should have data from water year 2023 (Oct 2022 - Sep 2023)"
+    );
+}

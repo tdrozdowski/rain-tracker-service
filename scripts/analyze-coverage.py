@@ -3,16 +3,17 @@
 Analyze lcov.info coverage report and display results by file.
 
 Usage:
-    python3 scripts/analyze-coverage.py [--filter PATTERN]
+    python3 scripts/analyze-coverage.py [--filter PATTERN] [--uncovered]
 
 Options:
     --filter PATTERN    Only show files matching this pattern (e.g., "excel_importer")
+    --uncovered         Show uncovered line numbers for filtered files
 """
 
 import re
 import sys
 
-def parse_lcov(lcov_path='lcov.info'):
+def parse_lcov(lcov_path='lcov.info', include_lines=False):
     """Parse lcov.info file and return coverage data."""
     with open(lcov_path, 'r') as f:
         content = f.read()
@@ -54,17 +55,63 @@ def parse_lcov(lcov_path='lcov.info'):
         else:
             relpath = filename
 
-        coverage_data.append((relpath, coverage_pct, lh, lf))
+        item = [relpath, coverage_pct, lh, lf]
+
+        if include_lines:
+            # Extract uncovered lines
+            lines = re.findall(r'^DA:(\d+),(\d+)', record, re.MULTILINE)
+            uncovered = [int(line_num) for line_num, hits in lines if int(hits) == 0]
+            item.append(uncovered)
+
+        coverage_data.append(tuple(item))
 
     return coverage_data
 
+def format_line_ranges(line_numbers):
+    """Format line numbers into ranges (e.g., '1-5, 7, 9-12')."""
+    if not line_numbers:
+        return "none"
+
+    line_numbers = sorted(line_numbers)
+    ranges = []
+    start = line_numbers[0]
+    end = line_numbers[0]
+
+    for line in line_numbers[1:]:
+        if line == end + 1:
+            end = line
+        else:
+            if start == end:
+                ranges.append(str(start))
+            else:
+                ranges.append(f"{start}-{end}")
+            start = line
+            end = line
+
+    if start == end:
+        ranges.append(str(start))
+    else:
+        ranges.append(f"{start}-{end}")
+
+    return ", ".join(ranges)
+
 def main():
     filter_pattern = None
-    if len(sys.argv) > 1:
-        if sys.argv[1] == '--filter' and len(sys.argv) > 2:
-            filter_pattern = sys.argv[2]
+    show_uncovered = False
 
-    coverage_data = parse_lcov()
+    # Parse arguments
+    i = 1
+    while i < len(sys.argv):
+        if sys.argv[i] == '--filter' and i + 1 < len(sys.argv):
+            filter_pattern = sys.argv[i + 1]
+            i += 2
+        elif sys.argv[i] == '--uncovered':
+            show_uncovered = True
+            i += 1
+        else:
+            i += 1
+
+    coverage_data = parse_lcov(include_lines=show_uncovered)
     coverage_data.sort(key=lambda x: x[1])
 
     if filter_pattern:
@@ -72,14 +119,22 @@ def main():
         print(f"FILES MATCHING '{filter_pattern}':")
         print("="*80)
         filtered = [item for item in coverage_data if filter_pattern in item[0]]
-        for filepath, pct, lh, lf in filtered:
+
+        for item in filtered:
+            filepath, pct, lh, lf = item[:4]
             print(f"{filepath:60} {pct:6.1f}% ({lh:4}/{lf:4})")
+
+            if show_uncovered and len(item) > 4:
+                uncovered_lines = item[4]
+                print(f"  Uncovered lines: {format_line_ranges(uncovered_lines)}")
+                print()
 
         if not filtered:
             print(f"No files found matching '{filter_pattern}'")
     else:
         print("Files with lowest coverage:\n")
-        for filepath, pct, lh, lf in coverage_data[:20]:
+        for item in coverage_data[:20]:
+            filepath, pct, lh, lf = item[:4]
             print(f"{filepath:60} {pct:6.1f}% ({lh:4}/{lf:4})")
 
 if __name__ == '__main__':
