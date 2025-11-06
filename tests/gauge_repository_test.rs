@@ -400,6 +400,18 @@ async fn test_gauge_exists_with_transaction() {
 async fn test_count_with_transaction() {
     let pool = gauge_repository_fixtures::setup_test_db().await;
     let repo = GaugeRepository::new(pool.clone());
+    let station_id = "TX_COUNT_1";
+
+    // Clean up
+    gauge_repository_fixtures::cleanup(&pool, station_id).await;
+
+    // Insert gauge metadata first (required by FK constraint)
+    let metadata = gauge_repository_fixtures::create_test_metadata(station_id);
+    repo.upsert_gauge_metadata(&metadata).await.unwrap();
+
+    // Insert a gauge summary (count queries gauge_summaries table)
+    let summary = gauge_repository_fixtures::create_test_fetched_gauge(station_id, "Test Gauge");
+    repo.upsert_summaries(&[summary]).await.unwrap();
 
     // Test transaction query
     let mut tx = pool.begin().await.unwrap();
@@ -414,6 +426,18 @@ async fn test_count_with_transaction() {
 async fn test_find_paginated_with_transaction() {
     let pool = gauge_repository_fixtures::setup_test_db().await;
     let repo = GaugeRepository::new(pool.clone());
+    let station_id = "TX_PAGE_1";
+
+    // Clean up
+    gauge_repository_fixtures::cleanup(&pool, station_id).await;
+
+    // Insert gauge metadata first (required by FK constraint)
+    let metadata = gauge_repository_fixtures::create_test_metadata(station_id);
+    repo.upsert_gauge_metadata(&metadata).await.unwrap();
+
+    // Insert a gauge summary (find_paginated queries gauge_summaries table)
+    let summary = gauge_repository_fixtures::create_test_fetched_gauge(station_id, "Test Gauge");
+    repo.upsert_summaries(&[summary]).await.unwrap();
 
     // Test transaction query
     let mut tx = pool.begin().await.unwrap();
