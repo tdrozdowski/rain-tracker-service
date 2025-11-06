@@ -185,6 +185,28 @@ python3 scripts/analyze-coverage.py --filter excel_importer --uncovered
 - [ ] Document any intentionally excluded files
 - [ ] Commit all test improvements
 
+## Iteration Strategy
+
+**IMPORTANT:** After completing each phase:
+
+1. **Generate coverage:** `DATABASE_URL=... cargo llvm-cov --all-targets --lcov --output-path lcov.info`
+2. **Check overall progress:** `DATABASE_URL=... cargo llvm-cov --all-targets | grep "^TOTAL"`
+3. **Identify next target:** `python3 scripts/analyze-coverage.py`
+4. **Iterate** until overall coverage >80% or diminishing returns
+
+**Diminishing Returns Indicators:**
+- File coverage stuck despite adding tests (e.g., excel_importer at 64% ceiling)
+- Remaining uncovered lines are primarily:
+  - Debug/info logging statements
+  - Error paths requiring malformed/unavailable data
+  - Runtime/startup code (main.rs, app.rs, scheduler.rs)
+- Effort to test exceeds value gained (integration test complexity vs. coverage gain)
+
+**When to Stop:**
+- Overall coverage ≥ 80%, OR
+- Remaining files are runtime/startup (0% acceptable), OR
+- Only logging/error paths remain uncovered across all files
+
 ## Files Already Well-Tested (No Action Needed)
 
 - `src/api.rs` - 79.6% (API integration tests cover this)
