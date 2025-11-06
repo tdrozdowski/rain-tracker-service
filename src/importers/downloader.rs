@@ -21,8 +21,8 @@ pub enum DownloadError {
 /// MCFCD data downloader for historical rainfall files
 #[derive(Clone)]
 pub struct McfcdDownloader {
-    client: Client,
-    base_url: String,
+    pub(crate) client: Client,
+    pub(crate) base_url: String,
 }
 
 impl McfcdDownloader {
@@ -35,6 +35,20 @@ impl McfcdDownloader {
                 .build()
                 .expect("Failed to create HTTP client"),
             base_url: "https://alert.fcd.maricopa.gov/alert/Rain/".to_string(),
+        }
+    }
+
+    /// Create a downloader with custom base URL
+    ///
+    /// This is primarily for testing with mock servers.
+    /// For production use, prefer `new()` which uses the official MCFCD URL.
+    pub fn with_base_url(base_url: String) -> Self {
+        Self {
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .expect("Failed to create HTTP client"),
+            base_url,
         }
     }
 
