@@ -1,4 +1,4 @@
-.PHONY: help check fmt fmt-fix clippy test ci-check clean openapi
+.PHONY: help check fmt fmt-fix clippy test ci-check clean openapi coverage
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -29,3 +29,9 @@ ci-check: fmt clippy test openapi ## Run all CI checks locally (format, clippy, 
 
 clean: ## Clean build artifacts
 	cargo clean
+
+coverage: ## Generate test coverage report (excludes runtime/startup files)
+	cargo llvm-cov --all-targets --ignore-filename-regex 'src/(main|app|config|scheduler)\.rs$$|src/db/pool\.rs$$'
+
+coverage-lcov: ## Generate lcov.info for detailed coverage analysis
+	cargo llvm-cov --all-targets --ignore-filename-regex 'src/(main|app|config|scheduler)\.rs$$|src/db/pool\.rs$$' --lcov --output-path lcov.info
