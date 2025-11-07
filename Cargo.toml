@@ -15,10 +15,6 @@ path = "src/main.rs"
 name = "generate-openapi"
 path = "src/bin/generate-openapi.rs"
 
-[[bin]]
-name = "historical-import"
-path = "src/bin/historical_import.rs"
-
 [dependencies]
 axum = "0.8"
 tokio = { version = "1.48", features = ["full"] }
@@ -37,15 +33,8 @@ utoipa = { version = "4.2", features = ["axum_extras", "chrono"] }
 # Excel parsing for gauge metadata (lat/lon) from FOPR files
 # Pure Rust, works with spawn_blocking(), actively maintained
 calamine = { version = "0.31", features = ["dates"] }
-# CLI argument parsing for import tools
-clap = { version = "4.5", features = ["derive", "env"] }
-# Progress bars for bulk import operations
-indicatif = "0.17"
-pdf-extract = "0.10.0"
 # Regex for parsing metadata from FOPR files (gauge ID history, complete years count)
 regex = "1"
-# Async stream utilities for parallel bulk import
-futures = "0.3"
 tempfile = "3.23.0"
 backon = "1.6.0"
 
