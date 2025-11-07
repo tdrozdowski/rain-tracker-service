@@ -3,6 +3,8 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main, master ]
+    tags-ignore:
+      - '**'  # Don't run on tag pushes (release.yml handles those)
     paths:
       - 'src/**'
       - 'tests/**'
