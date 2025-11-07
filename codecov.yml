@@ -27,9 +27,17 @@ comment:
   require_changes: no
 
 ignore:
-  - "tests/**"
-  - "src/bin/**"
-  - "migrations/**"
+  - "tests/**"           # Test files don't need coverage
+  - "src/bin/**"         # CLI tools (separate executables)
+  - "migrations/**"      # SQL migrations
+  - "src/main.rs"        # Runtime/startup code
+  - "src/app.rs"         # Runtime/startup code
+  - "src/config.rs"      # Runtime/startup code
+  - "src/scheduler.rs"   # Runtime/startup code
+  - "src/db/pool.rs"     # Runtime/startup code
 
+# These exclusions match the Makefile coverage targets to ensure
+# consistent coverage reporting between local and CI environments.
+#
 # Note: Logging statements are marked with inline comments in code
 # to exclude them from coverage (e.g., // coverage:ignore-line)
