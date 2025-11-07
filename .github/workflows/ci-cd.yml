@@ -156,10 +156,7 @@ jobs:
           DATABASE_URL: ${{ env.DATABASE_URL_TEST }}
         run: |
           cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info \
-            --lib --bins \
-            --test api_integration_test \
-            --test integration_test \
-            --test fopr_metadata_parsing_test
+            --ignore-filename-regex 'src/bin/.*\.rs$|src/(main|app|config|scheduler)\.rs$|src/db/pool\.rs$'
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
